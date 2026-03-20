@@ -1,5 +1,5 @@
 import { ipcMain, dialog, shell } from 'electron'
-import { readFile, unlink } from 'fs/promises'
+import { readFile, unlink, access } from 'fs/promises'
 import { extname } from 'path'
 import { pathToFileURL } from 'url'
 import { execFile } from 'child_process'
@@ -16,6 +16,10 @@ export function registerDialogHandlers(): void {
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]
+  })
+
+  ipcMain.handle('dialog:pathExists', async (_, path: string): Promise<boolean> => {
+    try { await access(path); return true } catch { return false }
   })
 
   ipcMain.handle('dialog:openFolderInFinder', async (_, path: string): Promise<void> => {

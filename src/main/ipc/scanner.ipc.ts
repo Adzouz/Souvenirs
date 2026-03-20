@@ -119,18 +119,13 @@ export function registerScannerHandlers(): void {
       const total = allPaths.length
       let scanned = 0
       let found = 0
+      let skipped = 0
 
       for (const filePath of allPaths) {
         if (cancelled) break
 
         scanned++
-        const progress: ScanProgress = {
-          total,
-          scanned,
-          found,
-          current: basename(filePath)
-        }
-        win?.webContents.send('scanner:progress', progress)
+        win?.webContents.send('scanner:progress', { total, scanned, found, skipped, current: basename(filePath) } satisfies ScanProgress)
 
         try {
           const stats = await stat(filePath)
@@ -148,14 +143,16 @@ export function registerScannerHandlers(): void {
 
           const exifDate = toISO(exifDateRaw ?? undefined)
           const fsDate = await getFsCreationDate(filePath)
+          const fsMtimeDate = toISO(tags.FileModifyDate?.toString())
 
           let dateStatus: DateStatus = 'missing'
-          if (exifDate && fsDate) {
-            // Compare to the second (ignore milliseconds)
-            const exifSec = exifDate.slice(0, 19)
-            const fsSec = fsDate.slice(0, 19)
-            dateStatus = exifSec === fsSec ? 'ok' : 'mismatch'
-          } else if (exifDate || fsDate) {
+          const fsDates = [fsDate, fsMtimeDate].filter(Boolean) as string[]
+          if (exifDate && fsDates.length > 0) {
+            // ok if EXIF matches any filesystem date (creation or modification) — date only, ignoring time
+            const exifDay = exifDate.slice(0, 10)
+            const matchesAny = fsDates.some((d) => d.slice(0, 10) === exifDay)
+            dateStatus = matchesAny ? 'ok' : 'mismatch'
+          } else if (exifDate || fsDates.length > 0) {
             dateStatus = 'mismatch' // one side is missing
           }
 
@@ -173,6 +170,7 @@ export function registerScannerHandlers(): void {
             mimeType,
             exifDate,
             fsDate,
+            fsMtimeDate,
             resolvedDate,
             resolvedYear,
             dateStatus,
@@ -187,6 +185,7 @@ export function registerScannerHandlers(): void {
           files.push(file)
           found++
         } catch (err) {
+          skipped++
           console.error(`Error scanning ${filePath}:`, err)
         }
       }

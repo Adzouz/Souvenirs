@@ -5,6 +5,7 @@ import { readFile } from 'fs/promises'
 import sharp from 'sharp'
 import { execFile } from 'child_process'
 import { getMainWindow } from '../index'
+import { findBin } from '../find-bin'
 
 const THUMB_SIZE = 160
 const THUMB_DIR = join(app.getPath('userData'), 'thumbnails')
@@ -43,12 +44,14 @@ async function generateImageThumbnail(filePath: string, fileId: string): Promise
   try {
     const tp = thumbPath(fileId)
     await sharp(filePath)
+      .rotate() // apply EXIF orientation before resizing
       .resize(THUMB_SIZE, THUMB_SIZE, { fit: 'cover', position: 'centre' })
       .jpeg({ quality: 75 })
       .toFile(tp)
     const data = await readFile(tp)
     return `data:image/jpeg;base64,${data.toString('base64')}`
-  } catch {
+  } catch (err) {
+    console.error('[thumbnail] failed for', filePath, err)
     return null
   }
 }
@@ -111,7 +114,7 @@ async function generateVideoThumbnail(filePath: string, fileId: string): Promise
     const tp = thumbPath(fileId)
     await new Promise<void>((resolve, reject) => {
       execFile(
-        'ffmpeg',
+        findBin('ffmpeg'),
         [
           '-ss', '00:00:01',
           '-i', filePath,

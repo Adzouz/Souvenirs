@@ -113,17 +113,9 @@ export async function resolvePathForVideoPreview(absPath: string): Promise<strin
   if (pending) return pending
 
   const work = (async (): Promise<string> => {
-    const ffmpegBin = findBin('ffmpeg')
-    const ffprobeBin = findBin('ffprobe')
-    console.log(`[transcode] ffmpeg: ${ffmpegBin}, ffprobe: ${ffprobeBin}`)
-
-    if (!(await ffmpegInstalled())) {
-      console.warn('[transcode] ffmpeg not available at', ffmpegBin)
-      return absPath
-    }
+    if (!(await ffmpegInstalled())) return absPath
 
     const codec = await ffprobeVideoCodec(absPath)
-    console.log(`[transcode] codec for ${absPath}: ${codec}`)
     if (codec === null) return absPath
     if (isBrowserFriendlyCodec(codec)) return absPath
 
@@ -131,26 +123,18 @@ export async function resolvePathForVideoPreview(absPath: string): Promise<strin
     if (existsSync(out)) {
       try {
         const ost = await stat(out)
-        if (ost.size > 0) {
-          console.log('[transcode] cache hit:', out)
-          return out
-        }
+        if (ost.size > 0) return out
       } catch {
         /* regenerate */
       }
     }
 
-    console.log('[transcode] transcoding to', out)
     try {
       await transcodeToH264Mp4(absPath, out)
       const ost = await stat(out)
-      if (ost.size > 0) {
-        console.log('[transcode] done, size:', ost.size)
-        return out
-      }
-      console.warn('[transcode] output is empty')
-    } catch (err) {
-      console.error('[transcode] failed:', err)
+      if (ost.size > 0) return out
+    } catch {
+      /* fall through */
     }
     return absPath
   })()

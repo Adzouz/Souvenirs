@@ -367,10 +367,7 @@ export function PreviewPage(): React.JSX.Element {
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back
             </Button>
-            <Button
-              onClick={run}
-              className={cn(isMove && 'bg-destructive hover:bg-destructive/90')}
-            >
+            <Button onClick={run}>
               {isMove ? <MoveRight className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
               {verb} {actions.length} file{actions.length !== 1 ? 's' : ''}
             </Button>

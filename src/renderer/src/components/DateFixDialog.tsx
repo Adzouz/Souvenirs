@@ -81,44 +81,36 @@ export function DateFixDialog({
           <p className="text-sm text-muted-foreground font-mono truncate">{file.name}</p>
 
           {/* Show existing dates for reference */}
-          {(file.exifDate || file.fsDate) && (
+          {(file.exifDate || file.fsDate || file.fsMtimeDate) && (
             <div className="rounded-md border bg-muted/30 p-3 space-y-2 text-xs">
-              {file.exifDate && (
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-muted-foreground">EXIF date</span>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono">{formatDate(file.exifDate)}</span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-5 text-[10px] px-1.5"
-                      onClick={() => setValue(toDatetimeLocal(file.exifDate!))}
-                    >
-                      Use
-                    </Button>
+              {(
+                [
+                  { label: 'EXIF', date: file.exifDate },
+                  { label: 'Created', date: file.fsDate },
+                  { label: 'Modified', date: file.fsMtimeDate }
+                ] as { label: string; date: string | null }[]
+              ).map(({ label, date }) =>
+                date ? (
+                  <div key={label} className="flex items-center justify-between gap-4">
+                    <span className="text-muted-foreground">{label}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono">{formatDate(date)}</span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-5 text-[10px] px-1.5"
+                        onClick={() => setValue(toDatetimeLocal(date))}
+                      >
+                        Use
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              )}
-              {file.fsDate && (
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-muted-foreground">Filesystem</span>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono">{formatDate(file.fsDate)}</span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-5 text-[10px] px-1.5"
-                      onClick={() => setValue(toDatetimeLocal(file.fsDate!))}
-                    >
-                      Use
-                    </Button>
-                  </div>
-                </div>
+                ) : null
               )}
             </div>
           )}
 
-          {file.exifDate && file.fsDate && <Separator />}
+          <Separator />
 
           {/* Date input */}
           <div className="space-y-1.5">

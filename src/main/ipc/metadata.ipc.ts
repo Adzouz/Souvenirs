@@ -59,7 +59,11 @@ export function registerMetadataHandlers(): void {
           String(d.getSeconds()).padStart(2, '0')
         ].join(':')
 
-        await execFileAsync('SetFile', ['-d', formatted, filePath]).catch(() => {
+        const setFile = findBin('SetFile')
+        await Promise.all([
+          execFileAsync(setFile, ['-d', formatted, filePath]),
+          execFileAsync(setFile, ['-m', formatted, filePath])
+        ]).catch(() => {
           // SetFile may not be available — non-fatal, EXIF was already written
           console.warn('SetFile not available, skipping filesystem date update')
         })

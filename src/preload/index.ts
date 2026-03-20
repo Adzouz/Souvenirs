@@ -30,6 +30,7 @@ const api = {
   // File system dialogs
   dialog: {
     openFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:openFolder'),
+    pathExists: (path: string): Promise<boolean> => ipcRenderer.invoke('dialog:pathExists', path),
     openFolderInFinder: (path: string): Promise<void> =>
       ipcRenderer.invoke('dialog:openFolderInFinder', path),
     openFile: (path: string): Promise<void> => ipcRenderer.invoke('dialog:openFile', path),

@@ -35,10 +35,21 @@ export function HomePage(): React.JSX.Element {
   const { sessions, loadSessions, setActiveSession } = useSessionStore()
   const { setPage } = useUiStore()
   const { setFiles } = useFilesStore()
+  const [missingFolders, setMissingFolders] = React.useState<Set<string>>(new Set())
 
   useEffect(() => {
     loadSessions()
   }, [])
+
+  useEffect(() => {
+    if (sessions.length === 0) return
+    const allFolders = [...new Set(sessions.flatMap((s) => s.sourceFolders))]
+    Promise.all(allFolders.map(async (f) => ({ f, exists: await window.api.dialog.pathExists(f) }))).then(
+      (results) => {
+        setMissingFolders(new Set(results.filter((r) => !r.exists).map((r) => r.f)))
+      }
+    )
+  }, [sessions])
 
   async function openSession(session: Session): Promise<void> {
     setActiveSession(session)
@@ -55,13 +66,6 @@ export function HomePage(): React.JSX.Element {
     setActiveSession(null)
     setFiles([])
     setPage('setup')
-  }
-
-  function isFolderMissing(folder: string): boolean {
-    // We can't check filesystem from renderer directly;
-    // the warning is set by the main process via session metadata.
-    // For now we show a warning if path looks like an external drive.
-    return folder.startsWith('/Volumes/')
   }
 
   return (
@@ -113,7 +117,7 @@ export function HomePage(): React.JSX.Element {
           ) : (
             <div className="grid gap-3">
               {sessions.map((session) => {
-                const hasMissingFolders = session.sourceFolders.some(isFolderMissing)
+                const hasMissingFolders = session.sourceFolders.some((f) => missingFolders.has(f))
                 const pendingCount = session.files.filter((f) => !f.processed).length
                 const processedCount = session.files.filter((f) => f.processed).length
 

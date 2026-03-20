@@ -30,11 +30,14 @@ export function DateFixPage(): React.JSX.Element {
   const { setPage } = useUiStore()
   const { files, updateFile } = useFilesStore()
 
-  // All files with date issues
+  const [showOk, setShowOk] = useState(false)
+
+  // All files with date issues (+ ok files when toggle is on)
   const problemFiles = useMemo(
-    () => files.filter((f) => f.dateStatus !== 'ok'),
-    [files]
+    () => showOk ? files : files.filter((f) => f.dateStatus !== 'ok'),
+    [files, showOk]
   )
+  const okCount = useMemo(() => files.filter((f) => f.dateStatus === 'ok').length, [files])
 
   // Target dates: fileId → datetime-local string (or '' if not set)
   const [targets, setTargets] = useState<Record<string, string>>(() => {
@@ -49,11 +52,10 @@ export function DateFixPage(): React.JSX.Element {
   const [modes, setModes] = useState<Record<string, DateMode>>(() => {
     const init: Record<string, DateMode> = {}
     for (const f of files.filter((f) => f.dateStatus !== 'ok')) {
-      init[f.id] = f.exifDate ? 'exif' : 'fs'
+      init[f.id] = f.exifDate ? 'exif' : f.fsDate ? 'fs' : 'mtime'
     }
     return init
   })
-
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkDate, setBulkDate] = useState('')
   const [runState, setRunState] = useState<RunState>('idle')
@@ -62,8 +64,14 @@ export function DateFixPage(): React.JSX.Element {
 
   const mismatches = problemFiles.filter((f) => f.dateStatus === 'mismatch')
   const missing = problemFiles.filter((f) => f.dateStatus === 'missing')
+  const okFiles = problemFiles.filter((f) => f.dateStatus === 'ok')
 
-  const readyCount = problemFiles.filter((f) => targets[f.id]).length
+  const allReadyCount = problemFiles.filter((f) => targets[f.id]).length
+  const fixCandidates =
+    selected.size > 0
+      ? problemFiles.filter((f) => selected.has(f.id) && targets[f.id])
+      : problemFiles.filter((f) => targets[f.id])
+  const readyCount = fixCandidates.length
 
   function toggleSelect(id: string): void {
     setSelected((prev) => {
@@ -109,7 +117,7 @@ export function DateFixPage(): React.JSX.Element {
   }
 
   async function runFix(): Promise<void> {
-    const toFix = problemFiles.filter((f) => targets[f.id])
+    const toFix = fixCandidates
     if (toFix.length === 0) return
 
     setRunState('running')
@@ -232,7 +240,7 @@ export function DateFixPage(): React.JSX.Element {
       </div>
 
       {/* Bulk actions bar */}
-      <div className="flex shrink-0 items-center gap-3 border-b bg-muted/30 px-4 py-2">
+      <div className="flex shrink-0 items-center gap-3 border-b bg-muted/30 px-4 py-2 flex-wrap">
         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={selected.size === problemFiles.length ? deselectAll : selectAll}>
           {selected.size === problemFiles.length && selected.size > 0
             ? <CheckSquare className="h-4 w-4" />
@@ -242,6 +250,16 @@ export function DateFixPage(): React.JSX.Element {
         {mismatches.length > 0 && (
           <Button variant="outline" size="sm" className="h-7 text-xs" onClick={prefillAllMismatches}>
             Pre-fill all mismatches with EXIF date
+          </Button>
+        )}
+        {okCount > 0 && (
+          <Button
+            variant={showOk ? 'secondary' : 'ghost'}
+            size="sm"
+            className="h-7 text-xs ml-auto"
+            onClick={() => setShowOk((v) => !v)}
+          >
+            {showOk ? `Hide OK files` : `Show OK files (${okCount})`}
           </Button>
         )}
         {selected.size > 0 && (
@@ -313,6 +331,31 @@ export function DateFixPage(): React.JSX.Element {
               </div>
             </div>
           )}
+
+          {/* OK files section */}
+          {okFiles.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground px-1">
+                OK — {okFiles.length} file{okFiles.length !== 1 ? 's' : ''}
+              </p>
+              <div className="rounded-md border overflow-hidden">
+                {okFiles.map((file, i) => (
+                  <FileFixRow
+                    key={file.id}
+                    file={file}
+                    target={targets[file.id] ?? ''}
+                    mode={modes[file.id] ?? 'exif'}
+                    selected={selected.has(file.id)}
+                    error={errors[file.id]}
+                    onToggleSelect={() => toggleSelect(file.id)}
+                    onTargetChange={(v) => setTargets((p) => ({ ...p, [file.id]: v }))}
+                    onModeChange={(m) => setModes((p) => ({ ...p, [file.id]: m }))}
+                    isLast={i === okFiles.length - 1}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </ScrollArea>
 
@@ -324,7 +367,9 @@ export function DateFixPage(): React.JSX.Element {
         </Button>
         <div className="flex items-center gap-3">
           <span className="text-sm text-muted-foreground">
-            {readyCount} of {problemFiles.length} files ready
+            {selected.size > 0
+              ? `${readyCount} of ${selected.size} selected ready`
+              : `${allReadyCount} of ${problemFiles.length} files ready`}
           </span>
           <Button onClick={runFix} disabled={readyCount === 0}>
             <CalendarClock className="mr-2 h-4 w-4" />
@@ -336,7 +381,7 @@ export function DateFixPage(): React.JSX.Element {
   )
 }
 
-type DateMode = 'exif' | 'fs'
+type DateMode = 'exif' | 'fs' | 'mtime'
 
 function FileFixRow({
   file,
@@ -363,11 +408,13 @@ function FileFixRow({
     onModeChange(m)
     if (m === 'exif' && file.exifDate) onTargetChange(toDatetimeLocal(file.exifDate))
     else if (m === 'fs' && file.fsDate) onTargetChange(toDatetimeLocal(file.fsDate))
+    else if (m === 'mtime' && file.fsMtimeDate) onTargetChange(toDatetimeLocal(file.fsMtimeDate))
   }
 
   const hasExif = !!file.exifDate
   const hasFs = !!file.fsDate
-  const showToggle = hasExif && hasFs
+  const hasMtime = !!file.fsMtimeDate
+  const showToggle = [hasExif, hasFs, hasMtime].filter(Boolean).length > 1
 
   return (
     <>
@@ -396,9 +443,11 @@ function FileFixRow({
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{file.name}</p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            EXIF: {file.exifDate ? formatDate(file.exifDate) : <span className="opacity-40">Unknown</span>}
+            EXIF: {file.exifDate ? formatDate(file.exifDate) : <span className="opacity-40">—</span>}
             {' · '}
-            Filesystem: {file.fsDate ? formatDate(file.fsDate) : <span className="opacity-40">Unknown</span>}
+            Created: {file.fsDate ? formatDate(file.fsDate) : <span className="opacity-40">—</span>}
+            {' · '}
+            Modified: {file.fsMtimeDate ? formatDate(file.fsMtimeDate) : <span className="opacity-40">—</span>}
           </p>
           {error && <p className="text-xs text-destructive mt-0.5">{error}</p>}
         </div>
@@ -412,24 +461,39 @@ function FileFixRow({
         <div className="shrink-0 w-48 space-y-1">
           {showToggle && (
             <div className="flex rounded-md border overflow-hidden text-xs h-6">
-              <button
-                className={cn(
-                  'flex-1 px-2 transition-colors',
-                  mode === 'exif' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
-                )}
-                onClick={() => selectMode('exif')}
-              >
-                EXIF
-              </button>
-              <button
-                className={cn(
-                  'flex-1 px-2 border-l transition-colors',
-                  mode === 'fs' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
-                )}
-                onClick={() => selectMode('fs')}
-              >
-                Filesystem
-              </button>
+              {hasExif && (
+                <button
+                  className={cn(
+                    'flex-1 px-2 transition-colors',
+                    mode === 'exif' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
+                  )}
+                  onClick={() => selectMode('exif')}
+                >
+                  EXIF
+                </button>
+              )}
+              {hasFs && (
+                <button
+                  className={cn(
+                    'flex-1 px-2 border-l transition-colors',
+                    mode === 'fs' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
+                  )}
+                  onClick={() => selectMode('fs')}
+                >
+                  Created
+                </button>
+              )}
+              {hasMtime && (
+                <button
+                  className={cn(
+                    'flex-1 px-2 border-l transition-colors',
+                    mode === 'mtime' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
+                  )}
+                  onClick={() => selectMode('mtime')}
+                >
+                  Modified
+                </button>
+              )}
             </div>
           )}
           <Input

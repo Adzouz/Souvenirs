@@ -11,7 +11,8 @@ export interface MediaFile {
   size: number // bytes
   mimeType: string // image/jpeg, video/mp4, etc.
   exifDate: string | null // ISO 8601 from CreateDate / DateTimeOriginal / FileCreateDate
-  fsDate: string | null // ISO 8601 from filesystem creation date
+  fsDate: string | null // ISO 8601 from filesystem creation date (birthtime)
+  fsMtimeDate: string | null // ISO 8601 from filesystem modification date (mtime)
   resolvedDate: string | null // best available (exif wins over fs)
   resolvedYear: number | null
   dateStatus: DateStatus
@@ -67,6 +68,7 @@ export interface ScanProgress {
   total: number
   scanned: number
   found: number
+  skipped: number
   current: string
 }
 

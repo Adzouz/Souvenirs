@@ -20,6 +20,7 @@ interface Api {
   }
   dialog: {
     openFolder: () => Promise<string | null>
+    pathExists: (path: string) => Promise<boolean>
     openFolderInFinder: (path: string) => Promise<void>
     openFile: (path: string) => Promise<void>
     trashFile: (path: string) => Promise<void>

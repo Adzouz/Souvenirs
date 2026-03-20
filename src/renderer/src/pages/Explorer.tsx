@@ -213,7 +213,8 @@ function FileRow({
               <TooltipContent>
                 <div className="text-xs space-y-1">
                   <p>EXIF: {file.exifDate ? formatDate(file.exifDate) : '—'}</p>
-                  <p>Filesystem: {file.fsDate ? formatDate(file.fsDate) : '—'}</p>
+                  <p>Created: {file.fsDate ? formatDate(file.fsDate) : '—'}</p>
+                  <p>Modified: {file.fsMtimeDate ? formatDate(file.fsMtimeDate) : '—'}</p>
                 </div>
               </TooltipContent>
             </Tooltip>
@@ -237,12 +238,10 @@ function FileRow({
                   Show in Finder
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                {file.dateStatus !== 'ok' && (
-                  <DropdownMenuItem onClick={() => onFixDate(file)}>
-                    <CalendarClock className="mr-2 h-4 w-4" />
-                    Fix date
-                  </DropdownMenuItem>
-                )}
+                <DropdownMenuItem onClick={() => onFixDate(file)}>
+                  <CalendarClock className="mr-2 h-4 w-4" />
+                  Fix date
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => {
                     setFilter({ year: file.resolvedYear ?? 'no-date' })
@@ -277,12 +276,10 @@ function FileRow({
           Show in Finder
         </ContextMenuItem>
         <ContextMenuSeparator />
-        {file.dateStatus !== 'ok' && (
-          <ContextMenuItem onClick={() => onFixDate(file)}>
-            <CalendarClock className="mr-2 h-4 w-4" />
-            Fix date
-          </ContextMenuItem>
-        )}
+        <ContextMenuItem onClick={() => onFixDate(file)}>
+          <CalendarClock className="mr-2 h-4 w-4" />
+          Fix date
+        </ContextMenuItem>
         <ContextMenuItem
           onClick={() => {
             setFilter({ year: file.resolvedYear ?? 'no-date' })
@@ -1010,7 +1007,7 @@ export function ExplorerPage(): React.JSX.Element {
                 <span className="text-sm text-muted-foreground">{selectedIds.size} selected</span>
                 <Button disabled={!hasOutput} onClick={() => setPage('preview')}>
                   <Copy className="mr-2 h-4 w-4" />
-                  Copy {selectedIds.size} file{selectedIds.size !== 1 ? 's' : ''}
+                  {activeSession?.transferMode === 'move' ? 'Move' : 'Copy'} {selectedIds.size} file{selectedIds.size !== 1 ? 's' : ''}
                 </Button>
               </div>
             </div>

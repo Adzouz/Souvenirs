@@ -83,9 +83,11 @@ export function ScanPage(): React.JSX.Element {
             <span className="rounded-full bg-muted px-3 py-1">
               {scanProgress.found} media found
             </span>
-            <span className="rounded-full bg-muted px-3 py-1">
-              {scanProgress.scanned - scanProgress.found} skipped
-            </span>
+            {scanProgress.skipped > 0 && (
+              <span className="rounded-full bg-muted px-3 py-1">
+                {scanProgress.skipped} skipped
+              </span>
+            )}
           </>
         )}
       </div>
