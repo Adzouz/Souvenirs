@@ -1,7 +1,11 @@
-import { ipcMain } from 'electron'
+import { ipcMain, app } from 'electron'
 import { randomUUID } from 'crypto'
+import { join } from 'path'
+import { unlink } from 'fs/promises'
 import type { Session } from '../../shared/types'
 import { sessionStore } from '../session-store'
+
+const THUMB_DIR = join(app.getPath('userData'), 'thumbnails')
 
 export function registerSessionHandlers(): void {
   ipcMain.handle('sessions:list', (): Session[] => {
@@ -41,8 +45,16 @@ export function registerSessionHandlers(): void {
     sessionStore.set('sessions', updated)
   })
 
-  ipcMain.handle('sessions:delete', (_, id: string): void => {
+  ipcMain.handle('sessions:delete', async (_, id: string): Promise<void> => {
     const sessions = sessionStore.get('sessions')
+    const session = sessions.find((s) => s.id === id)
     sessionStore.set('sessions', sessions.filter((s) => s.id !== id))
+
+    // Clean up cached thumbnails for all files in this session
+    if (session) {
+      await Promise.allSettled(
+        session.files.map((f) => unlink(join(THUMB_DIR, `${f.id}.jpg`)))
+      )
+    }
   })
 }

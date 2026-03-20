@@ -14,8 +14,9 @@ if (!existsSync(THUMB_DIR)) {
 }
 
 const IMAGE_EXTS = new Set([
-  'jpg', 'jpeg', 'png', 'webp', 'tiff', 'tif', 'gif', 'bmp', 'heic', 'heif'
+  'jpg', 'jpeg', 'png', 'webp', 'tiff', 'tif', 'gif', 'bmp'
 ])
+const HEIC_EXTS = new Set(['heic', 'heif'])
 const VIDEO_EXTS = new Set(['mp4', 'mov', 'm4v', 'avi', 'mkv', 'wmv', '3gp'])
 const RAW_EXTS = new Set(['cr2', 'cr3', 'nef', 'arw', 'dng', 'raf'])
 
@@ -78,6 +79,31 @@ async function generateRawThumbnail(filePath: string, fileId: string): Promise<s
   }
 }
 
+async function generateHeicThumbnail(filePath: string, fileId: string): Promise<string | null> {
+  const cached = await readCached(fileId)
+  if (cached) return cached
+  const tp = thumbPath(fileId)
+  const tmp = tp + '.conv.jpg'
+  try {
+    // Use macOS sips to convert HEIC→JPEG, then resize with Sharp
+    await new Promise<void>((resolve, reject) => {
+      execFile('sips', ['-s', 'format', 'jpeg', filePath, '--out', tmp],
+        (err) => (err ? reject(err) : resolve()))
+    })
+    await sharp(tmp)
+      .rotate() // apply EXIF orientation before resizing
+      .resize(THUMB_SIZE, THUMB_SIZE, { fit: 'cover', position: 'centre' })
+      .jpeg({ quality: 75 })
+      .toFile(tp)
+    require('fs').unlinkSync(tmp)
+    const data = await readFile(tp)
+    return `data:image/jpeg;base64,${data.toString('base64')}`
+  } catch {
+    try { require('fs').unlinkSync(tmp) } catch { /* ignore */ }
+    return null
+  }
+}
+
 async function generateVideoThumbnail(filePath: string, fileId: string): Promise<string | null> {
   const cached = await readCached(fileId)
   if (cached) return cached
@@ -105,6 +131,7 @@ async function generateVideoThumbnail(filePath: string, fileId: string): Promise
 
 async function generate(filePath: string, fileId: string): Promise<string | null> {
   const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
+  if (HEIC_EXTS.has(ext)) return generateHeicThumbnail(filePath, fileId)
   if (IMAGE_EXTS.has(ext)) return generateImageThumbnail(filePath, fileId)
   if (RAW_EXTS.has(ext)) return generateRawThumbnail(filePath, fileId)
   if (VIDEO_EXTS.has(ext)) return generateVideoThumbnail(filePath, fileId)

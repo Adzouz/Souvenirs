@@ -24,6 +24,8 @@ interface Api {
     openFile: (path: string) => Promise<void>
     trashFile: (path: string) => Promise<void>
     readImageAsDataUrl: (path: string) => Promise<string | null>
+    pathToFileUrl: (path: string) => Promise<string>
+    mediaPreviewUrl: (path: string) => Promise<string>
   }
   scanner: {
     scan: (sessionId: string, sourceFolders: string[]) => Promise<MediaFile[]>

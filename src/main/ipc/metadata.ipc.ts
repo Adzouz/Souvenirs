@@ -3,12 +3,13 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { exiftool } from 'exiftool-vendored'
 import type { DependencyStatus } from '../../shared/types'
+import { findBin } from '../find-bin'
 
 const execFileAsync = promisify(execFile)
 
 async function checkCommand(cmd: string, args: string[]): Promise<string | null> {
   try {
-    const { stdout } = await execFileAsync(cmd, args)
+    const { stdout } = await execFileAsync(findBin(cmd), args)
     return stdout.trim()
   } catch {
     return null

@@ -117,7 +117,7 @@ export function SettingsPage(): React.JSX.Element {
                 <DepRow
                   name="ffmpeg"
                   ok={dependencies?.ffmpeg ?? false}
-                  installHint="brew install ffmpeg (required for video thumbnails)"
+                  installHint="brew install ffmpeg — thumbnails + HEVC/ProRes lightbox preview (needs ffprobe)"
                 />
               </div>
             </div>

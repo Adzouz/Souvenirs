@@ -50,6 +50,7 @@ import { cn, formatBytes, formatDate } from '@/lib/utils'
 import type { MediaFile } from '../../../shared/types'
 import { ErrorLogDrawer } from '@/components/ErrorLogDrawer'
 import { DateFixDialog } from '@/components/DateFixDialog'
+import { Lightbox } from '@/components/Lightbox'
 
 const DATE_STATUS_CONFIG = {
   ok: { label: 'OK', color: 'text-green-600', bg: 'bg-green-50', icon: CheckCircle2 },
@@ -175,7 +176,7 @@ function FileRow({
           {/* Processed */}
           <div className="flex w-28 shrink-0 items-center justify-start">
             {file.processed ? (
-              <Badge className="bg-green-100 text-xs text-green-600 dark:bg-green-700 dark:text-green-100">
+              <Badge className="bg-green-100 hover:bg-green-100 text-xs text-green-600 dark:bg-green-700 dark:hover:bg-green-700 dark:text-green-100">
                 Processed
               </Badge>
             ) : (
@@ -309,12 +310,16 @@ function GridCard({
   file,
   selected,
   onToggle,
-  thumbLoading
+  thumbLoading,
+  onOpen,
+  selectMode
 }: {
   file: MediaFile
   selected: boolean
   onToggle: () => void
   thumbLoading: boolean
+  onOpen: () => void
+  selectMode: boolean
 }): React.JSX.Element {
   const statusCfg = DATE_STATUS_CONFIG[file.dateStatus]
   const StatusIcon = statusCfg.icon
@@ -330,7 +335,7 @@ function GridCard({
               ? 'border-primary ring-2 ring-primary/20'
               : 'border-border hover:border-muted-foreground/40'
           )}
-          onClick={onToggle}
+          onClick={selectMode ? onToggle : onOpen}
         >
           {/* Thumbnail */}
           <div className="aspect-square w-full bg-muted">
@@ -352,34 +357,62 @@ function GridCard({
             )}
           </div>
 
-          {/* Overlay: checkbox */}
-          <div className="absolute left-2 top-2">
+          {/* Checkbox — always toggles selection; entering select mode on first click */}
+          <div
+            className="absolute left-2 top-2"
+            onClick={(e) => {
+              e.stopPropagation()
+              onToggle()
+            }}
+          >
             {selected ? (
               <CheckSquare className="h-5 w-5 text-primary drop-shadow" />
             ) : (
-              <Square className="h-5 w-5 text-white drop-shadow opacity-0 group-hover:opacity-100" />
+              <Square
+                className={cn(
+                  'h-5 w-5 text-white drop-shadow transition-opacity',
+                  selectMode ? 'opacity-50' : 'opacity-0 group-hover:opacity-100'
+                )}
+              />
             )}
           </div>
 
           {/* Status badge */}
-          <div className={cn('absolute right-2 top-2 rounded-full p-1', statusCfg.bg)}>
-            <StatusIcon className={cn('h-3 w-3', statusCfg.color)} />
-          </div>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className={cn('absolute right-2 top-2 rounded-full p-1', statusCfg.bg)}>
+                  <StatusIcon className={cn('h-3 w-3', statusCfg.color)} />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="left">
+                <div className="text-xs space-y-1">
+                  <p className="font-medium">{statusCfg.label}</p>
+                  {file.dateStatus === 'ok' && <p>EXIF and filesystem dates match</p>}
+                  {file.dateStatus === 'mismatch' && (
+                    <>
+                      <p>EXIF and filesystem dates differ</p>
+                      <p>EXIF: {file.exifDate ? formatDate(file.exifDate) : '—'}</p>
+                      <p>Filesystem: {file.fsDate ? formatDate(file.fsDate) : '—'}</p>
+                    </>
+                  )}
+                  {file.dateStatus === 'missing' && <p>No date metadata found</p>}
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
 
           {/* Info footer */}
           <div className="p-2">
             <p className="truncate text-xs font-medium">{file.name}</p>
-            <div className="flex items-center gap-1 mt-0.5">
-              <p className="text-xs text-muted-foreground">{file.resolvedYear ?? '—'}</p>
-              {file.duplicateType && (
-                <Badge
-                  variant="outline"
-                  className="h-3.5 text-[9px] px-1 border-orange-300 text-orange-600"
-                >
-                  dup
-                </Badge>
-              )}
-            </div>
+            {file.duplicateType && (
+              <Badge
+                variant="outline"
+                className="mt-0.5 h-3.5 text-[9px] px-1 border-orange-300 text-orange-600"
+              >
+                dup
+              </Badge>
+            )}
           </div>
         </div>
       </ContextMenuTrigger>
@@ -426,6 +459,7 @@ export function ExplorerPage(): React.JSX.Element {
   const { setPage, errorLogOpen, setErrorLogOpen } = useUiStore()
 
   const [fixingFile, setFixingFile] = useState<MediaFile | null>(null)
+  const [lightboxFileId, setLightboxFileId] = useState<string | null>(null)
 
   function handleFixed(fileId: string, newDate: string): void {
     const year = new Date(newDate).getFullYear()
@@ -509,6 +543,34 @@ export function ExplorerPage(): React.JSX.Element {
   const noDateCount = files.filter((f) => f.dateStatus === 'missing').length
   const mismatchCount = files.filter((f) => f.dateStatus === 'mismatch').length
 
+  // Select mode: derived from whether anything is selected
+  const selectMode = selectedIds.size > 0
+
+  // Lightbox navigation within the current filtered list
+  const lightboxIndex = lightboxFileId ? filtered.findIndex((f) => f.id === lightboxFileId) : -1
+  const lightboxFile = lightboxIndex >= 0 ? filtered[lightboxIndex] : null
+
+  // Year groups for the grid view (computed from filtered, not all files)
+  const gridYearGroups = React.useMemo(() => {
+    const map = new Map<string, { key: string; label: string; files: MediaFile[] }>()
+    for (const file of filtered) {
+      const key = file.resolvedYear?.toString() ?? 'no-date'
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          label: file.resolvedYear?.toString() ?? 'No date',
+          files: []
+        })
+      }
+      map.get(key)!.files.push(file)
+    }
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.key === 'no-date') return 1
+      if (b.key === 'no-date') return -1
+      return parseInt(a.key) - parseInt(b.key)
+    })
+  }, [filtered])
+
   function handleSelectAll(): void {
     if (selectedIds.size === filtered.length) deselectAll()
     else selectAll()
@@ -549,17 +611,31 @@ export function ExplorerPage(): React.JSX.Element {
               <span className="text-xs">{errorCount} errors</span>
             </Button>
           )}
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPage('scan')}>
-            <ScanSearch className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => setPage('settings')}
-          >
-            <Settings className="h-4 w-4" />
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPage('scan')}>
+                  <ScanSearch className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Rescan</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => setPage('settings')}
+                >
+                  <Settings className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Settings</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
       </div>
 
@@ -756,28 +832,42 @@ export function ExplorerPage(): React.JSX.Element {
 
             {/* View toggle */}
             <div className="flex rounded-md border">
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn(
-                  'h-7 w-7 rounded-r-none border-0',
-                  viewMode === 'list' && 'bg-accent'
-                )}
-                onClick={() => setViewMode('list')}
-              >
-                <List className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn(
-                  'h-7 w-7 rounded-l-none border-0',
-                  viewMode === 'grid' && 'bg-accent'
-                )}
-                onClick={() => setViewMode('grid')}
-              >
-                <LayoutGrid className="h-3.5 w-3.5" />
-              </Button>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn(
+                        'h-7 w-7 rounded-r-none border-0',
+                        viewMode === 'list' && 'bg-accent'
+                      )}
+                      onClick={() => setViewMode('list')}
+                    >
+                      <List className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>List view</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn(
+                        'h-7 w-7 rounded-l-none border-0',
+                        viewMode === 'grid' && 'bg-accent'
+                      )}
+                      onClick={() => setViewMode('grid')}
+                    >
+                      <LayoutGrid className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Grid view</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </div>
           </div>
 
@@ -847,21 +937,35 @@ export function ExplorerPage(): React.JSX.Element {
                 </div>
               </div>
             ) : (
-              <div
-                className="grid gap-3 p-4"
-                style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}
-              >
-                {filtered.map((file) => (
-                  <GridCard
-                    key={file.id}
-                    file={file}
-                    selected={selectedIds.has(file.id)}
-                    onToggle={() => toggleSelect(file.id)}
-                    thumbLoading={pendingThumbs.has(file.id)}
-                  />
+              <div className="p-4 space-y-8">
+                {gridYearGroups.map((group) => (
+                  <div key={group.key}>
+                    <div className="mb-3 flex items-center justify-between">
+                      <h3 className="text-sm font-semibold">{group.label}</h3>
+                      <span className="text-xs text-muted-foreground">
+                        {group.files.length} {group.files.length === 1 ? 'file' : 'files'}
+                      </span>
+                    </div>
+                    <div
+                      className="grid gap-3"
+                      style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}
+                    >
+                      {group.files.map((file) => (
+                        <GridCard
+                          key={file.id}
+                          file={file}
+                          selected={selectedIds.has(file.id)}
+                          onToggle={() => toggleSelect(file.id)}
+                          thumbLoading={pendingThumbs.has(file.id)}
+                          onOpen={() => setLightboxFileId(file.id)}
+                          selectMode={selectMode}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 ))}
                 {filtered.length === 0 && (
-                  <div className="col-span-full py-16 text-center text-sm text-muted-foreground">
+                  <div className="py-16 text-center text-sm text-muted-foreground">
                     No files match the current filters
                   </div>
                 )}
@@ -912,6 +1016,22 @@ export function ExplorerPage(): React.JSX.Element {
             </div>
           )
         })()}
+
+      {/* Lightbox */}
+      {lightboxFile && (
+        <Lightbox
+          file={lightboxFile}
+          currentIndex={lightboxIndex}
+          total={filtered.length}
+          onClose={() => setLightboxFileId(null)}
+          onPrev={lightboxIndex > 0 ? () => setLightboxFileId(filtered[lightboxIndex - 1].id) : null}
+          onNext={
+            lightboxIndex < filtered.length - 1
+              ? () => setLightboxFileId(filtered[lightboxIndex + 1].id)
+              : null
+          }
+        />
+      )}
 
       {/* Error log drawer */}
       <ErrorLogDrawer open={errorLogOpen} onClose={() => setErrorLogOpen(false)} />

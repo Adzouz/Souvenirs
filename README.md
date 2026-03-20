@@ -18,7 +18,10 @@ A desktop app to sort your photos and videos by year. Point it at one or more so
 - **Duplicate detection** — identifies files already present at the destination
 - **Preview before acting** — review the full list of actions grouped by year before committing
 - **Progress tracking** — live progress during copy/move with per-file status
-- **Thumbnail generation** — image and video thumbnails via Sharp
+- **Gallery & lightbox** — grid view grouped by year with full-screen lightbox, prev/next navigation, and media info; click to browse, select to batch-act
+- **Video preview** — plays MP4, MOV, and other formats in the built-in player; HEVC/MJPEG/ProRes files are automatically transcoded to H.264 on first open via ffmpeg (cached for subsequent views)
+- **HEIC support** — thumbnails and lightbox preview for HEIC/HEIF images via macOS `sips`
+- **Thumbnail generation** — image and video thumbnails via Sharp, cleaned up when a session is deleted
 - **Light/dark theme** — persisted preference, not tied to OS setting
 - **Persistent sessions** — resume where you left off; sessions survive app restarts
 
@@ -32,6 +35,7 @@ A desktop app to sort your photos and videos by year. Point it at one or more so
 | State | [Zustand](https://github.com/pmndrs/zustand) |
 | EXIF | [exiftool-vendored](https://github.com/photostructure/exiftool-vendored.js) |
 | Thumbnails | [Sharp](https://sharp.pixelplumbing.com) |
+| Video transcoding | ffmpeg (optional, for HEVC/MJPEG/ProRes preview) |
 | Persistence | [electron-store](https://github.com/sindresorhus/electron-store) |
 
 ## Getting Started
@@ -40,6 +44,7 @@ A desktop app to sort your photos and videos by year. Point it at one or more so
 
 - Node.js 20+
 - macOS (primary target; Windows/Linux builds available but untested)
+- [ffmpeg](https://ffmpeg.org) (optional) — required for video preview of HEVC, MJPEG, and ProRes files (`brew install ffmpeg`)
 
 ### Install
 
@@ -70,7 +75,7 @@ npm run build:linux
 
 1. **Create a session** — give it a name, add one or more source folders, and set a destination folder
 2. **Scan** — the app reads EXIF data and generates thumbnails for all media files found
-3. **Explore** — browse files by year, filter by status (unprocessed, no date, date mismatch), sort and select
+3. **Explore** — browse files in list or grid view grouped by year; click a file to preview it in the lightbox (images and videos), or select files for bulk actions; filter by status (unprocessed, no date, date mismatch)
 4. **Fix dates (optional)** — use the Date Fix page to correct EXIF/filesystem mismatches before copying
 5. **Preview** — review the copy/move plan grouped by destination year folder
 6. **Copy or Move** — execute the operation with live progress

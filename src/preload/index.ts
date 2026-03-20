@@ -34,7 +34,11 @@ const api = {
       ipcRenderer.invoke('dialog:openFolderInFinder', path),
     openFile: (path: string): Promise<void> => ipcRenderer.invoke('dialog:openFile', path),
     trashFile: (path: string): Promise<void> => ipcRenderer.invoke('dialog:trashFile', path),
-    readImageAsDataUrl: (path: string): Promise<string | null> => ipcRenderer.invoke('dialog:readImageAsDataUrl', path)
+    readImageAsDataUrl: (path: string): Promise<string | null> =>
+      ipcRenderer.invoke('dialog:readImageAsDataUrl', path),
+    pathToFileUrl: (path: string): Promise<string> => ipcRenderer.invoke('dialog:pathToFileUrl', path),
+    mediaPreviewUrl: (path: string): Promise<string> =>
+      ipcRenderer.invoke('dialog:mediaPreviewUrl', path)
   },
 
   // Scanner
