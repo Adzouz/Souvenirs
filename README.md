@@ -8,7 +8,9 @@ A desktop app to sort your photos and videos by year. Point it at one or more so
 
 ![Souvenirs screenshot](docs/screenshot.png)
 
-<video src="docs/demo.mp4" controls width="100%"></video>
+## Demo
+
+https://github.com/user-attachments/assets/293462f4-206d-43d4-99f0-ab3cfea89a48
 
 ## Features
 
