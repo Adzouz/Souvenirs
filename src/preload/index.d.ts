@@ -24,12 +24,14 @@ interface Api {
     openFolderInFinder: (path: string) => Promise<void>
     openFile: (path: string) => Promise<void>
     trashFile: (path: string) => Promise<void>
+    renameFile: (oldPath: string, newName: string) => Promise<string>
     readImageAsDataUrl: (path: string) => Promise<string | null>
     pathToFileUrl: (path: string) => Promise<string>
     mediaPreviewUrl: (path: string) => Promise<string>
   }
   scanner: {
     scan: (sessionId: string, sourceFolders: string[]) => Promise<MediaFile[]>
+    scanNew: (sessionId: string, newFolder: string, existingPaths: string[]) => Promise<MediaFile[]>
     cancel: () => Promise<void>
     onProgress: (cb: (progress: ScanProgress) => void) => () => void
   }

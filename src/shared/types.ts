@@ -16,7 +16,8 @@ export interface MediaFile {
   resolvedDate: string | null // best available (exif wins over fs)
   resolvedYear: number | null
   dateStatus: DateStatus
-  thumbnail: string | null // base64 data URL
+  overrideDate: string | null // user-chosen date to apply on destination during copy/move
+  dateFixed: boolean // destination copy had its date corrected — detected on rescan
   status: FileStatus
   processed: boolean // already exists in destination YYYY/ folder
   duplicateGroupId: string | null // set when multiple files share the same name+year or content
@@ -40,6 +41,8 @@ export interface CopyAction {
   fixDate: boolean
   fixedDate: string | null
   isDuplicate: boolean
+  duplicateType: 'name' | 'content' | null
+  alreadySynced: boolean // dest has same content — skip copy, delete source if move mode
 }
 
 export interface Session {
@@ -70,6 +73,7 @@ export interface ScanProgress {
   found: number
   skipped: number
   current: string
+  phase: 'scanning' | 'hashing' | 'matching'
 }
 
 export interface CopyProgress {

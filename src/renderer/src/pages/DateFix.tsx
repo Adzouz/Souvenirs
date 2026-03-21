@@ -1,10 +1,10 @@
 import React, { useState, useMemo } from 'react'
 import { useUiStore } from '../store/ui.store'
 import { useFilesStore } from '../store/files.store'
+import { useSessionStore } from '../store/session.store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Progress } from '@/components/ui/progress'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -13,7 +13,7 @@ import {
   CheckSquare,
   Square,
   CheckCircle2,
-  AlertTriangle
+  Info
 } from 'lucide-react'
 import { cn, formatBytes, formatDate } from '@/lib/utils'
 import type { MediaFile } from '../../../shared/types'
@@ -24,34 +24,37 @@ function toDatetimeLocal(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-type RunState = 'idle' | 'running' | 'done'
+type RunState = 'idle' | 'done'
 
 export function DateFixPage(): React.JSX.Element {
   const { setPage } = useUiStore()
-  const { files, updateFile } = useFilesStore()
+  const { files, thumbnails, updateFile } = useFilesStore()
+  const { updateActiveSession } = useSessionStore()
 
   const [showOk, setShowOk] = useState(false)
 
+  // Only unprocessed files — processed files already have their date applied at the destination
+  const sourceFiles = useMemo(() => files.filter((f) => !f.processed), [files])
+
   // All files with date issues (+ ok files when toggle is on)
   const problemFiles = useMemo(
-    () => showOk ? files : files.filter((f) => f.dateStatus !== 'ok'),
-    [files, showOk]
+    () => showOk ? sourceFiles : sourceFiles.filter((f) => f.dateStatus !== 'ok'),
+    [sourceFiles, showOk]
   )
-  const okCount = useMemo(() => files.filter((f) => f.dateStatus === 'ok').length, [files])
+  const okCount = useMemo(() => sourceFiles.filter((f) => f.dateStatus === 'ok').length, [sourceFiles])
 
   // Target dates: fileId → datetime-local string (or '' if not set)
   const [targets, setTargets] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {}
-    for (const f of files.filter((f) => f.dateStatus !== 'ok')) {
-      const best = f.exifDate ?? f.fsDate
-      init[f.id] = best ? toDatetimeLocal(best) : ''
+    for (const f of files.filter((f) => !f.processed && f.dateStatus !== 'ok')) {
+      init[f.id] = f.overrideDate ? toDatetimeLocal(f.overrideDate) : (f.exifDate ?? f.fsDate) ? toDatetimeLocal((f.exifDate ?? f.fsDate)!) : ''
     }
     return init
   })
 
   const [modes, setModes] = useState<Record<string, DateMode>>(() => {
     const init: Record<string, DateMode> = {}
-    for (const f of files.filter((f) => f.dateStatus !== 'ok')) {
+    for (const f of files.filter((f) => !f.processed && f.dateStatus !== 'ok')) {
       init[f.id] = f.exifDate ? 'exif' : f.fsDate ? 'fs' : 'mtime'
     }
     return init
@@ -59,12 +62,13 @@ export function DateFixPage(): React.JSX.Element {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkDate, setBulkDate] = useState('')
   const [runState, setRunState] = useState<RunState>('idle')
-  const [progress, setProgress] = useState({ done: 0, total: 0, current: '' })
-  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [savedCount, setSavedCount] = useState(0)
 
-  const mismatches = problemFiles.filter((f) => f.dateStatus === 'mismatch')
-  const missing = problemFiles.filter((f) => f.dateStatus === 'missing')
-  const okFiles = problemFiles.filter((f) => f.dateStatus === 'ok')
+  const configured = problemFiles.filter((f) => f.overrideDate !== null)
+  const configuredIds = new Set(configured.map((f) => f.id))
+  const mismatches = problemFiles.filter((f) => f.dateStatus === 'mismatch' && !configuredIds.has(f.id))
+  const missing = problemFiles.filter((f) => f.dateStatus === 'missing' && !configuredIds.has(f.id))
+  const okFiles = problemFiles.filter((f) => f.dateStatus === 'ok' && !configuredIds.has(f.id))
 
   const allReadyCount = problemFiles.filter((f) => targets[f.id]).length
   const fixCandidates =
@@ -116,81 +120,32 @@ export function DateFixPage(): React.JSX.Element {
     })
   }
 
-  async function runFix(): Promise<void> {
+  function runFix(): void {
     const toFix = fixCandidates
     if (toFix.length === 0) return
 
-    setRunState('running')
-    setErrors({})
-    setProgress({ done: 0, total: toFix.length, current: '' })
-
     for (const file of toFix) {
-      setProgress((p) => ({ ...p, current: file.name }))
-      try {
-        const iso = new Date(targets[file.id]).toISOString()
-        await window.api.metadata.fixDate(file.path, iso)
-        updateFile(file.id, {
-          exifDate: iso,
-          fsDate: iso,
-          resolvedDate: iso,
-          resolvedYear: new Date(iso).getFullYear(),
-          dateStatus: 'ok'
-        })
-      } catch (e) {
-        setErrors((prev) => ({
-          ...prev,
-          [file.id]: e instanceof Error ? e.message : 'Failed'
-        }))
-      }
-      setProgress((p) => ({ ...p, done: p.done + 1 }))
+      const iso = new Date(targets[file.id]).toISOString()
+      updateFile(file.id, { overrideDate: iso })
     }
 
+    updateActiveSession({ files: useFilesStore.getState().files })
+    setSavedCount(toFix.length)
     setRunState('done')
-  }
-
-  const percent = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0
-  const failCount = Object.keys(errors).length
-
-  // ── Running state ──────────────────────────────────────────────────────────
-  if (runState === 'running') {
-    return (
-      <div className="flex h-screen flex-col items-center justify-center gap-8 px-8">
-        <div className="flex flex-col items-center gap-2">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
-            <CalendarClock className="h-7 w-7 animate-pulse text-muted-foreground" />
-          </div>
-          <h2 className="text-lg font-semibold">Fixing dates…</h2>
-        </div>
-        <div className="w-full max-w-md space-y-2">
-          <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-            <span className="truncate max-w-[260px]">{progress.current}</span>
-            <span className="tabular-nums font-medium">{percent}% · {progress.done} / {progress.total}</span>
-          </div>
-          <Progress value={percent} className="h-2" />
-        </div>
-      </div>
-    )
   }
 
   // ── Done state ─────────────────────────────────────────────────────────────
   if (runState === 'done') {
-    const fixed = progress.total - failCount
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-6 px-8">
-        <div className={cn(
-          'flex h-16 w-16 items-center justify-center rounded-full',
-          failCount > 0 ? 'bg-yellow-100' : 'bg-green-100'
-        )}>
-          {failCount > 0
-            ? <AlertTriangle className="h-8 w-8 text-yellow-600" />
-            : <CheckCircle2 className="h-8 w-8 text-green-600" />
-          }
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
+          <CheckCircle2 className="h-8 w-8 text-green-600" />
         </div>
         <div className="text-center space-y-1">
-          <h2 className="text-xl font-bold">Done</h2>
+          <h2 className="text-xl font-bold">Date preferences saved</h2>
           <p className="text-sm text-muted-foreground">
-            {fixed} file{fixed !== 1 ? 's' : ''} fixed
-            {failCount > 0 && `, ${failCount} failed`}
+            {savedCount} file{savedCount !== 1 ? 's' : ''} will have their date corrected when copied or moved.
+            Your original files won't be touched.
           </p>
         </div>
         <Button onClick={() => setPage('explorer')}>Back to explorer</Button>
@@ -296,7 +251,7 @@ export function DateFixPage(): React.JSX.Element {
                     target={targets[file.id] ?? ''}
                     mode={modes[file.id] ?? 'exif'}
                     selected={selected.has(file.id)}
-                    error={errors[file.id]}
+                    thumbnail={thumbnails.get(file.id) ?? null}
                     onToggleSelect={() => toggleSelect(file.id)}
                     onTargetChange={(v) => setTargets((p) => ({ ...p, [file.id]: v }))}
                     onModeChange={(m) => setModes((p) => ({ ...p, [file.id]: m }))}
@@ -321,11 +276,38 @@ export function DateFixPage(): React.JSX.Element {
                     target={targets[file.id] ?? ''}
                     mode={modes[file.id] ?? 'fs'}
                     selected={selected.has(file.id)}
-                    error={errors[file.id]}
+                    thumbnail={thumbnails.get(file.id) ?? null}
                     onToggleSelect={() => toggleSelect(file.id)}
                     onTargetChange={(v) => setTargets((p) => ({ ...p, [file.id]: v }))}
                     onModeChange={(m) => setModes((p) => ({ ...p, [file.id]: m }))}
                     isLast={i === missing.length - 1}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Configured section */}
+          {configured.length > 0 && (
+            <div className="space-y-2">
+              <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-green-600 px-1">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Configured — {configured.length} file{configured.length !== 1 ? 's' : ''}
+              </p>
+              <div className="rounded-md border border-green-200 dark:border-green-800 overflow-hidden">
+                {configured.map((file, i) => (
+                  <FileFixRow
+                    key={file.id}
+                    file={file}
+                    target={targets[file.id] ?? (file.overrideDate ? toDatetimeLocal(file.overrideDate) : '')}
+                    mode={modes[file.id] ?? 'exif'}
+                    selected={selected.has(file.id)}
+                    thumbnail={thumbnails.get(file.id) ?? null}
+                    configured
+                    onToggleSelect={() => toggleSelect(file.id)}
+                    onTargetChange={(v) => setTargets((p) => ({ ...p, [file.id]: v }))}
+                    onModeChange={(m) => setModes((p) => ({ ...p, [file.id]: m }))}
+                    isLast={i === configured.length - 1}
                   />
                 ))}
               </div>
@@ -346,7 +328,7 @@ export function DateFixPage(): React.JSX.Element {
                     target={targets[file.id] ?? ''}
                     mode={modes[file.id] ?? 'exif'}
                     selected={selected.has(file.id)}
-                    error={errors[file.id]}
+                    thumbnail={thumbnails.get(file.id) ?? null}
                     onToggleSelect={() => toggleSelect(file.id)}
                     onTargetChange={(v) => setTargets((p) => ({ ...p, [file.id]: v }))}
                     onModeChange={(m) => setModes((p) => ({ ...p, [file.id]: m }))}
@@ -358,6 +340,14 @@ export function DateFixPage(): React.JSX.Element {
           )}
         </div>
       </ScrollArea>
+
+      {/* Info banner */}
+      <div className="flex items-center gap-3 border-t border-blue-200 dark:border-blue-700 bg-blue-50 dark:bg-blue-950 px-6 py-2">
+        <Info className="h-4 w-4 shrink-0 text-blue-500" />
+        <p className="flex-1 text-xs text-blue-900 dark:text-blue-100">
+          Dates are applied to the destination file during copy or move. Your original files won't be modified.
+        </p>
+      </div>
 
       {/* Footer */}
       <div className="flex shrink-0 items-center justify-between border-t px-6 py-4">
@@ -373,7 +363,7 @@ export function DateFixPage(): React.JSX.Element {
           </span>
           <Button onClick={runFix} disabled={readyCount === 0}>
             <CalendarClock className="mr-2 h-4 w-4" />
-            Fix {readyCount} file{readyCount !== 1 ? 's' : ''}
+            Save for {readyCount} file{readyCount !== 1 ? 's' : ''}
           </Button>
         </div>
       </div>
@@ -385,20 +375,22 @@ type DateMode = 'exif' | 'fs' | 'mtime'
 
 function FileFixRow({
   file,
+  thumbnail,
   target,
   mode,
   selected,
-  error,
+  configured = false,
   onToggleSelect,
   onTargetChange,
   onModeChange,
   isLast
 }: {
   file: MediaFile
+  thumbnail: string | null
   target: string
   mode: DateMode
   selected: boolean
-  error: string | undefined
+  configured?: boolean
   onToggleSelect: () => void
   onTargetChange: (v: string) => void
   onModeChange: (m: DateMode) => void
@@ -421,7 +413,7 @@ function FileFixRow({
       <div className={cn(
         'flex items-center gap-3 px-3 py-3 text-sm transition-colors',
         selected && 'bg-accent/50',
-        error && 'bg-destructive/5'
+        configured && 'bg-green-50 dark:bg-green-950/30'
       )}>
         {/* Checkbox */}
         <button className="shrink-0 text-muted-foreground" onClick={onToggleSelect}>
@@ -433,8 +425,8 @@ function FileFixRow({
 
         {/* Thumbnail */}
         <div className="h-10 w-10 shrink-0 overflow-hidden rounded">
-          {file.thumbnail
-            ? <img src={file.thumbnail} alt={file.name} className="h-full w-full object-cover" />
+          {thumbnail
+            ? <img src={thumbnail} alt={file.name} className="h-full w-full object-cover" />
             : <div className="flex h-full w-full items-center justify-center bg-muted text-[8px] font-mono text-muted-foreground">{file.ext.toUpperCase()}</div>
           }
         </div>
@@ -449,7 +441,6 @@ function FileFixRow({
             {' · '}
             Modified: {file.fsMtimeDate ? formatDate(file.fsMtimeDate) : <span className="opacity-40">—</span>}
           </p>
-          {error && <p className="text-xs text-destructive mt-0.5">{error}</p>}
         </div>
 
         {/* Size */}

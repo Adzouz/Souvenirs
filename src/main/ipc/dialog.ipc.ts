@@ -1,6 +1,6 @@
 import { ipcMain, dialog, shell } from 'electron'
-import { readFile, unlink, access } from 'fs/promises'
-import { extname } from 'path'
+import { readFile, unlink, access, rename } from 'fs/promises'
+import { extname, dirname, join } from 'path'
 import { pathToFileURL } from 'url'
 import { execFile } from 'child_process'
 import { getMainWindow } from '../index'
@@ -32,6 +32,12 @@ export function registerDialogHandlers(): void {
 
   ipcMain.handle('dialog:trashFile', async (_, path: string): Promise<void> => {
     await shell.trashItem(path)
+  })
+
+  ipcMain.handle('dialog:renameFile', async (_, oldPath: string, newName: string): Promise<string> => {
+    const newPath = join(dirname(oldPath), newName)
+    await rename(oldPath, newPath)
+    return newPath
   })
 
   /** Correct file:// URL for <img>/<video> src (encoding, Windows drives, etc.) */

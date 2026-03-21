@@ -9,8 +9,8 @@ import { ScanSearch, X } from 'lucide-react'
 
 export function ScanPage(): React.JSX.Element {
   const { activeSession, updateActiveSession } = useSessionStore()
-  const { setFiles } = useFilesStore()
-  const { setPage, scanProgress, setScanProgress } = useUiStore()
+  const { files: existingFiles, setFiles, mergeFiles } = useFilesStore()
+  const { setPage, scanProgress, setScanProgress, incrementalScanFolder, setIncrementalScanFolder } = useUiStore()
   const cancelledRef = useRef(false)
 
   useEffect(() => {
@@ -21,20 +21,41 @@ export function ScanPage(): React.JSX.Element {
       setScanProgress(progress)
     })
 
-    window.api.scanner
-      .scan(activeSession.id, activeSession.sourceFolders)
-      .then((files) => {
-        if (cancelledRef.current) return
-        setFiles(files)
-        updateActiveSession({ files })
-        setScanProgress(null)
-        setPage('explorer')
-      })
-      .catch((err) => {
-        console.error('Scan error:', err)
-        setScanProgress(null)
-        setPage('setup')
-      })
+    if (incrementalScanFolder) {
+      // Incremental: only scan the new folder, merge results
+      const existingPaths = existingFiles.map((f) => f.path)
+      window.api.scanner
+        .scanNew(activeSession.id, incrementalScanFolder, existingPaths)
+        .then((newFiles) => {
+          if (cancelledRef.current) return
+          mergeFiles(newFiles)
+          updateActiveSession({ files: useFilesStore.getState().files })
+          setIncrementalScanFolder(null)
+          setScanProgress(null)
+          setPage('explorer')
+        })
+        .catch((err) => {
+          console.error('Incremental scan error:', err)
+          setIncrementalScanFolder(null)
+          setScanProgress(null)
+          setPage('explorer')
+        })
+    } else {
+      window.api.scanner
+        .scan(activeSession.id, activeSession.sourceFolders)
+        .then((files) => {
+          if (cancelledRef.current) return
+          setFiles(files)
+          updateActiveSession({ files })
+          setScanProgress(null)
+          setPage('explorer')
+        })
+        .catch((err) => {
+          console.error('Scan error:', err)
+          setScanProgress(null)
+          setPage('setup')
+        })
+    }
 
     return unsub
   }, [])
@@ -51,14 +72,20 @@ export function ScanPage(): React.JSX.Element {
       ? Math.round((scanProgress.scanned / scanProgress.total) * 100)
       : 0
 
+  const phase = scanProgress?.phase ?? 'scanning'
+  const phaseLabel =
+    phase === 'hashing' ? 'Detecting duplicates…' :
+    phase === 'matching' ? 'Matching with library…' :
+    'Scanning files…'
+
   return (
     <div className="flex h-screen flex-col items-center justify-center gap-8 px-8">
       <div className="flex flex-col items-center gap-2">
         <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
           <ScanSearch className="h-7 w-7 animate-pulse text-muted-foreground" />
         </div>
-        <h2 className="text-lg font-semibold">Scanning files…</h2>
-        {scanProgress && (
+        <h2 className="text-lg font-semibold">{phaseLabel}</h2>
+        {scanProgress && phase === 'scanning' && (
           <p className="text-sm text-muted-foreground">
             {scanProgress.found} media files found
           </p>
@@ -78,7 +105,7 @@ export function ScanPage(): React.JSX.Element {
       </div>
 
       <div className="flex gap-3 text-sm text-muted-foreground">
-        {scanProgress && (
+        {scanProgress && phase === 'scanning' && (
           <>
             <span className="rounded-full bg-muted px-3 py-1">
               {scanProgress.found} media found

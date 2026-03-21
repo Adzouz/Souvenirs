@@ -29,7 +29,7 @@ function yearFolderSortKey(folder: string): number {
 export function PreviewPage(): React.JSX.Element {
   const { setPage, setCopyProgress, copyProgress } = useUiStore()
   const { activeSession, updateActiveSession } = useSessionStore()
-  const { files, updateFile, selectedIds, deselectAll } = useFilesStore()
+  const { files, thumbnails, updateFile, selectedIds, deselectAll } = useFilesStore()
 
   const [actions, setActions] = useState<CopyAction[]>([])
   const [runState, setRunState] = useState<RunState>('idle')
@@ -85,7 +85,11 @@ export function PreviewPage(): React.JSX.Element {
       if (updatedSession) {
         updateActiveSession({ files: updatedSession.files, errorLog: updatedSession.errorLog })
         for (const f of updatedSession.files) {
-          updateFile(f.id, { status: f.status, processed: f.processed, errorMessage: f.errorMessage })
+          updateFile(f.id, {
+            status: f.status,
+            processed: f.processed,
+            errorMessage: f.errorMessage
+          })
         }
       }
     } catch {
@@ -103,15 +107,18 @@ export function PreviewPage(): React.JSX.Element {
     return sum + (file?.size ?? 0)
   }, 0)
 
-  const dateFix = actions.filter((a) => a.fixDate).length
-  const dupeCount = actions.filter((a) => a.isDuplicate).length
+  const syncedCount = actions.filter((a) => a.alreadySynced).length
+  const activeActions = actions.filter((a) => !a.alreadySynced)
+  const dateFix = activeActions.filter((a) => a.fixDate).length
+  const dupeCount = activeActions.filter((a) => a.isDuplicate).length
+  const nameConflictCount = activeActions.filter((a) => a.duplicateType === 'name').length
 
   // Group actions by year folder (first path segment after outputFolder)
   const outputFolder = activeSession?.outputFolder ?? ''
   type YearGroup = { yearFolder: string; destFolderPath: string; actions: CopyAction[] }
   const yearGroups: YearGroup[] = []
   const yearMap = new Map<string, YearGroup>()
-  for (const action of actions) {
+  for (const action of activeActions) {
     const rel = action.destPath.slice(outputFolder.length + 1)
     const yearFolder = rel.split('/')[0] ?? 'unknown'
     if (!yearMap.has(yearFolder)) {
@@ -233,20 +240,39 @@ export function PreviewPage(): React.JSX.Element {
           <span className="text-sm">Preparing actions…</span>
         </div>
       ) : actions.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3">
-          <p className="text-muted-foreground text-sm">
-            No files selected or no output folder set.
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+          <CheckCircle2 className="h-8 w-8 text-green-500" />
+          <p className="text-sm font-medium">All selected files are already up to date</p>
+          <p className="text-muted-foreground text-xs max-w-xs">
+            Every file you selected already exists at the destination with the same content. Nothing to {verb.toLowerCase()}.
           </p>
           <Button variant="outline" onClick={() => setPage('explorer')}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back
           </Button>
         </div>
+      ) : activeActions.length === 0 && syncedCount > 0 ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+          <CheckCircle2 className="h-8 w-8 text-green-500" />
+          <p className="text-sm font-medium">All selected files are already at the destination</p>
+          <p className="text-muted-foreground text-xs max-w-xs">
+            {syncedCount} source file{syncedCount !== 1 ? 's' : ''} will be deleted.
+          </p>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setPage('explorer')}>
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back
+            </Button>
+            <Button onClick={run}>
+              Delete {syncedCount} source file{syncedCount !== 1 ? 's' : ''}
+            </Button>
+          </div>
+        </div>
       ) : (
         <>
           {/* Summary bar */}
           <div className="flex shrink-0 items-center gap-4 border-b bg-muted/30 px-6 py-2 text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">{actions.length} files</span>
+            <span className="font-medium text-foreground">{activeActions.length} files</span>
             <span>{formatBytes(totalSize)}</span>
             {dateFix > 0 && (
               <Badge variant="outline" className="gap-1 text-blue-600 border-blue-300">
@@ -259,10 +285,16 @@ export function PreviewPage(): React.JSX.Element {
                 {dupeCount} duplicate{dupeCount !== 1 ? 's' : ''}
               </Badge>
             )}
+            {syncedCount > 0 && (
+              <Badge variant="outline" className="gap-1 text-green-600 border-green-300">
+                <CheckCircle2 className="h-2.5 w-2.5" />
+                {syncedCount} already synced{isMove ? ' — source will be deleted' : ''}
+              </Badge>
+            )}
             {isMove && (
               <Badge variant="outline" className="gap-1 text-destructive border-destructive/40">
                 <AlertTriangle className="h-2.5 w-2.5" />
-                Move mode — originals will be deleted
+                Move mode — originals will be moved to the destination folder
               </Badge>
             )}
             {activeSession?.outputFolder && (
@@ -302,9 +334,9 @@ export function PreviewPage(): React.JSX.Element {
                         >
                           {/* Thumbnail */}
                           <div className="h-8 w-8 shrink-0 overflow-hidden rounded">
-                            {file?.thumbnail ? (
+                            {file && thumbnails.get(file.id) ? (
                               <img
-                                src={file.thumbnail}
+                                src={thumbnails.get(file.id)}
                                 alt={name}
                                 className="h-full w-full object-cover"
                               />
@@ -352,6 +384,15 @@ export function PreviewPage(): React.JSX.Element {
           </ScrollArea>
 
           {/* Footer */}
+          {nameConflictCount > 0 && (
+            <div className="flex items-center gap-3 border-t border-orange-200 dark:border-orange-700 bg-orange-50 dark:bg-orange-950 px-6 py-2">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-orange-500" />
+              <p className="flex-1 text-xs text-orange-900 dark:text-orange-100">
+                {nameConflictCount} file{nameConflictCount !== 1 ? 's' : ''} share the same name and destination folder and will be automatically renamed to preserve both copies.
+                You can go back to the conflict resolver to handle them manually.
+              </p>
+            </div>
+          )}
           {dateFix > 0 && (
             <div className="flex items-center gap-3 border-t border-blue-200 dark:border-blue-700 bg-blue-50 dark:bg-blue-950 px-6 py-2">
               <CalendarClock className="h-4 w-4 shrink-0 text-blue-500" />

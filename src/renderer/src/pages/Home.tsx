@@ -43,7 +43,12 @@ export function HomePage(): React.JSX.Element {
 
   useEffect(() => {
     if (sessions.length === 0) return
-    const allFolders = [...new Set(sessions.flatMap((s) => s.sourceFolders))]
+    const allFolders = [
+      ...new Set([
+        ...sessions.flatMap((s) => s.sourceFolders),
+        ...sessions.flatMap((s) => (s.outputFolder ? [s.outputFolder] : []))
+      ])
+    ]
     Promise.all(allFolders.map(async (f) => ({ f, exists: await window.api.dialog.pathExists(f) }))).then(
       (results) => {
         setMissingFolders(new Set(results.filter((r) => !r.exists).map((r) => r.f)))
@@ -117,7 +122,9 @@ export function HomePage(): React.JSX.Element {
           ) : (
             <div className="grid gap-3">
               {sessions.map((session) => {
-                const hasMissingFolders = session.sourceFolders.some((f) => missingFolders.has(f))
+                const hasMissingFolders =
+                  session.sourceFolders.some((f) => missingFolders.has(f)) ||
+                  (!!session.outputFolder && missingFolders.has(session.outputFolder))
                 const pendingCount = session.files.filter((f) => !f.processed).length
                 const processedCount = session.files.filter((f) => f.processed).length
 
@@ -159,16 +166,18 @@ export function HomePage(): React.JSX.Element {
                         )}
                       </div>
                       <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground font-mono">
-                        <span className="flex items-center gap-1 truncate">
-                          <FolderOpen className="h-3 w-3 shrink-0" />
-                          {session.sourceFolders.slice(0, 2).join(', ')}
-                          {session.sourceFolders.length > 2 &&
-                            ` +${session.sourceFolders.length - 2} more`}
-                        </span>
                         {session.outputFolder && (
                           <span className="flex items-center gap-1 truncate shrink-0">
                             <FolderOutput className="h-3 w-3 shrink-0" />
                             {session.outputFolder}
+                          </span>
+                        )}
+                        {session.sourceFolders.length > 0 && (
+                          <span className="flex items-center gap-1 truncate text-muted-foreground/70">
+                            <FolderOpen className="h-3 w-3 shrink-0" />
+                            {session.sourceFolders.slice(0, 2).join(', ')}
+                            {session.sourceFolders.length > 2 &&
+                              ` +${session.sourceFolders.length - 2} more`}
                           </span>
                         )}
                       </div>

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { VList } from 'virtua'
 import { useFilesStore } from '../store/files.store'
 import { useSessionStore } from '../store/session.store'
 import { useUiStore } from '../store/ui.store'
@@ -31,6 +32,7 @@ import {
   CheckSquare,
   Square,
   FolderOpen,
+  FolderPlus,
   ExternalLink,
   Copy,
   AlertTriangle,
@@ -54,28 +56,33 @@ import { Lightbox } from '@/components/Lightbox'
 
 const DATE_STATUS_CONFIG = {
   ok: { label: 'OK', color: 'text-green-600', bg: 'bg-green-50', icon: CheckCircle2 },
-  mismatch: {
-    label: 'Mismatch',
-    color: 'text-yellow-600',
-    bg: 'bg-yellow-50',
-    icon: AlertTriangle
-  },
-  missing: { label: 'No date', color: 'text-red-600', bg: 'bg-red-50', icon: AlertCircle }
+  mismatch: { label: 'Mismatch', color: 'text-yellow-600', bg: 'bg-yellow-50', icon: AlertTriangle },
+  missing: { label: 'No date', color: 'text-red-600', bg: 'bg-red-50', icon: AlertCircle },
+  configured: { label: 'Configured', color: 'text-blue-600', bg: 'bg-blue-50', icon: CalendarClock },
+  fixed: { label: 'Fixed', color: 'text-green-600', bg: 'bg-green-50', icon: CalendarClock }
+}
+
+function getDateStatus(file: MediaFile): keyof typeof DATE_STATUS_CONFIG {
+  if (file.dateFixed) return 'fixed'
+  if (file.overrideDate && !file.processed) return 'configured'
+  return file.dateStatus
 }
 
 function ThumbnailCell({
   file,
+  thumbnail,
   loading = false
 }: {
   file: MediaFile
+  thumbnail: string | null
   loading?: boolean
 }): React.JSX.Element {
   const isVideo = file.mimeType.startsWith('video/')
 
-  if (file.thumbnail) {
+  if (thumbnail) {
     return (
       <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded">
-        <img src={file.thumbnail} alt={file.name} className="h-full w-full object-cover" />
+        <img src={thumbnail} alt={file.name} className="h-full w-full object-cover" />
         {isVideo && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/20">
             <div className="h-0 w-0 border-y-[5px] border-l-[8px] border-y-transparent border-l-white" />
@@ -96,7 +103,7 @@ function ThumbnailCell({
   )
 }
 
-function FileRow({
+const FileRow = React.memo(function FileRow({
   file,
   selected,
   onToggle,
@@ -109,7 +116,8 @@ function FileRow({
   thumbLoading: boolean
   onFixDate: (file: MediaFile) => void
 }): React.JSX.Element {
-  const statusCfg = DATE_STATUS_CONFIG[file.dateStatus]
+  const thumbnail = useFilesStore((s) => s.thumbnails.get(file.id) ?? null)
+  const statusCfg = DATE_STATUS_CONFIG[getDateStatus(file)]
   const StatusIcon = statusCfg.icon
   const { setPage } = useUiStore()
   const { setFilter } = useFilesStore()
@@ -125,8 +133,16 @@ function FileRow({
   }
 
   const dir = file.path.substring(0, file.path.lastIndexOf('/'))
-  const sourceFolder = activeSession?.sourceFolders.find((s) => file.path.startsWith(s))
-  const relativeDir = sourceFolder ? dir.slice(sourceFolder.length).replace(/^\//, '') || './' : dir
+  const sourceFolder = activeSession?.sourceFolders
+    .map((s) => s.replace(/\/$/, ''))
+    .find((s) => file.path.startsWith(s + '/') || file.path === s)
+  const rootName = sourceFolder ? sourceFolder.substring(sourceFolder.lastIndexOf('/') + 1) : ''
+  const relativeSuffix = sourceFolder ? dir.slice(sourceFolder.length).replace(/^\//, '') : ''
+  const relativeDir = rootName
+    ? relativeSuffix
+      ? `${rootName}/${relativeSuffix}`
+      : rootName
+    : dir
   const shortPath = relativeDir.length > 60 ? '…' + relativeDir.slice(-57) : relativeDir
 
   return (
@@ -155,7 +171,7 @@ function FileRow({
           </div>
 
           {/* Thumbnail */}
-          <ThumbnailCell file={file} loading={thumbLoading} />
+          <ThumbnailCell file={file} thumbnail={thumbnail} loading={thumbLoading} />
 
           {/* Name + path — min-w-0 chain so row can shrink; right columns stay visible */}
           <div className="min-w-0 flex-1">
@@ -170,7 +186,31 @@ function FileRow({
                 </Badge>
               )}
             </div>
-            <p className="truncate text-xs text-muted-foreground font-mono">{shortPath}</p>
+            <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground font-mono">
+              {(file.status === 'moved' || (file.processed && activeSession?.transferMode === 'move')) ? (
+                activeSession?.outputFolder ? (
+                  <>
+                    <FolderOutput className="h-3 w-3 shrink-0 text-green-500" />
+                    <span className="truncate text-green-600">
+                      {`${activeSession.outputFolder.substring(activeSession.outputFolder.lastIndexOf('/') + 1)}/${file.resolvedYear ?? 'NoDate'}`}
+                    </span>
+                  </>
+                ) : null
+              ) : (
+                <>
+                  <FolderOpen className="h-3 w-3 shrink-0 opacity-60" />
+                  <span className="truncate">{shortPath}</span>
+                  {file.processed && activeSession?.outputFolder && (
+                    <>
+                      <FolderOutput className="h-3 w-3 shrink-0 ml-1 text-green-500" />
+                      <span className="truncate text-green-600">
+                        {`${activeSession.outputFolder.substring(activeSession.outputFolder.lastIndexOf('/') + 1)}/${file.resolvedYear ?? 'NoDate'}`}
+                      </span>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
           </div>
 
           {/* Processed */}
@@ -301,9 +341,9 @@ function FileRow({
       </ContextMenuContent>
     </ContextMenu>
   )
-}
+})
 
-function GridCard({
+const GridCard = React.memo(function GridCard({
   file,
   selected,
   onToggle,
@@ -318,7 +358,8 @@ function GridCard({
   onOpen: () => void
   selectMode: boolean
 }): React.JSX.Element {
-  const statusCfg = DATE_STATUS_CONFIG[file.dateStatus]
+  const thumbnail = useFilesStore((s) => s.thumbnails.get(file.id) ?? null)
+  const statusCfg = DATE_STATUS_CONFIG[getDateStatus(file)]
   const StatusIcon = statusCfg.icon
   const isVideo = file.mimeType.startsWith('video/')
 
@@ -336,8 +377,8 @@ function GridCard({
         >
           {/* Thumbnail */}
           <div className="aspect-square w-full bg-muted">
-            {file.thumbnail ? (
-              <img src={file.thumbnail} alt={file.name} className="h-full w-full object-cover" />
+            {thumbnail ? (
+              <img src={thumbnail} alt={file.name} className="h-full w-full object-cover" />
             ) : thumbLoading ? (
               <div className="h-full w-full animate-pulse bg-muted" />
             ) : (
@@ -402,14 +443,20 @@ function GridCard({
           {/* Info footer */}
           <div className="p-2">
             <p className="truncate text-xs font-medium">{file.name}</p>
-            {file.duplicateType && (
-              <Badge
-                variant="outline"
-                className="mt-0.5 h-3.5 text-[9px] px-1 border-orange-300 text-orange-600"
-              >
-                dup
-              </Badge>
-            )}
+            <div className="flex items-center gap-1 mt-0.5">
+              {file.processed
+                ? <FolderOutput className="h-3 w-3 shrink-0 text-green-500" />
+                : <FolderOpen className="h-3 w-3 shrink-0 opacity-40" />
+              }
+              {file.duplicateType && (
+                <Badge
+                  variant="outline"
+                  className="h-3.5 text-[9px] px-1 border-orange-300 text-orange-600"
+                >
+                  dup
+                </Badge>
+              )}
+            </div>
           </div>
         </div>
       </ContextMenuTrigger>
@@ -431,7 +478,7 @@ function GridCard({
       </ContextMenuContent>
     </ContextMenu>
   )
-}
+})
 
 export function ExplorerPage(): React.JSX.Element {
   const {
@@ -440,6 +487,7 @@ export function ExplorerPage(): React.JSX.Element {
     viewMode,
     filter,
     selectedIds,
+    thumbnails,
     setViewMode,
     setFilter,
     resetFilter,
@@ -449,11 +497,22 @@ export function ExplorerPage(): React.JSX.Element {
     getFiltered,
     getYearGroups,
     getDuplicateGroups,
-    setThumbnail,
+    setThumbnailBatch,
     updateFile
   } = useFilesStore()
-  const { activeSession } = useSessionStore()
-  const { setPage, errorLogOpen, setErrorLogOpen } = useUiStore()
+  const { activeSession, updateActiveSession } = useSessionStore()
+  const { setPage, errorLogOpen, setErrorLogOpen, setIncrementalScanFolder } = useUiStore()
+
+  async function addFolderToSort(): Promise<void> {
+    const folder = await window.api.dialog.openFolder()
+    if (!folder || !activeSession) return
+    if (activeSession.sourceFolders.includes(folder)) return
+    const updated = { ...activeSession, sourceFolders: [...activeSession.sourceFolders, folder] }
+    await window.api.sessions.update(updated)
+    updateActiveSession({ sourceFolders: updated.sourceFolders })
+    setIncrementalScanFolder(folder)
+    setPage('scan')
+  }
 
   const [fixingFile, setFixingFile] = useState<MediaFile | null>(null)
   const [lightboxFileId, setLightboxFileId] = useState<string | null>(null)
@@ -472,33 +531,46 @@ export function ExplorerPage(): React.JSX.Element {
   // Track which fileIds are still awaiting a thumbnail
   const [pendingThumbs, setPendingThumbs] = useState<Set<string>>(new Set())
 
-  // Depend on scanVersion — increments every time setFiles() is called (new scan).
-  // Using files.length alone fails when a rescan returns the same number of files.
-  // Individual thumbnail updates don't change scanVersion, so they won't cancel the batch.
   useEffect(() => {
     if (files.length === 0) return
 
-    const needsThumbnail = files.filter((f) => !f.thumbnail)
+    const needsThumbnail = files.filter((f) => !thumbnails.has(f.id))
     if (needsThumbnail.length === 0) return
 
     setPendingThumbs(new Set(needsThumbnail.map((f) => f.id)))
 
-    const unsub = window.api.thumbnails.onReady((fileId, dataUrl) => {
-      setThumbnail(fileId, dataUrl)
+    // Batch thumbnail updates: accumulate arrivals and flush every 80ms to avoid
+    // triggering a re-render per thumbnail (which would be O(n) work each time).
+    const pendingBatch = new Map<string, string>()
+    let flushTimer: ReturnType<typeof setTimeout> | null = null
+
+    const flush = (): void => {
+      if (pendingBatch.size === 0) return
+      const batch = new Map(pendingBatch)
+      pendingBatch.clear()
+      flushTimer = null
+      setThumbnailBatch(batch)
       setPendingThumbs((prev) => {
         const next = new Set(prev)
-        next.delete(fileId)
+        for (const id of batch.keys()) next.delete(id)
         return next
       })
+    }
+
+    const unsub = window.api.thumbnails.onReady((fileId, dataUrl) => {
+      pendingBatch.set(fileId, dataUrl)
+      if (!flushTimer) flushTimer = setTimeout(flush, 80)
     })
 
     window.api.thumbnails
       .generateBatch(needsThumbnail.map((f) => ({ filePath: f.path, fileId: f.id })))
       .then(() => {
+        if (flushTimer) { clearTimeout(flushTimer); flush() }
         setPendingThumbs(new Set())
       })
 
     return () => {
+      if (flushTimer) clearTimeout(flushTimer)
       window.api.thumbnails.cancelBatch()
       unsub()
     }
@@ -515,9 +587,10 @@ export function ExplorerPage(): React.JSX.Element {
     }
   }
 
-  const filtered = (() => {
+  // All derived values memoized — only recompute when their actual inputs change,
+  // NOT on every thumbnail update (thumbnails are now stored separately).
+  const filtered = React.useMemo(() => {
     const base = getFiltered()
-    if (!sortCol) return base // unreachable but keeps TS happy
     return [...base].sort((a, b) => {
       let cmp = 0
       if (sortCol === 'name') cmp = a.name.localeCompare(b.name)
@@ -529,16 +602,18 @@ export function ExplorerPage(): React.JSX.Element {
       }
       return sortDir === 'asc' ? cmp : -cmp
     })
-  })()
+  }, [files, filter, sortCol, sortDir])
 
-  const yearGroups = getYearGroups()
-  const duplicateGroups = getDuplicateGroups()
+  const yearGroups = React.useMemo(() => getYearGroups(), [files])
+  const duplicateGroups = React.useMemo(() => getDuplicateGroups(), [files])
   const duplicateCount = duplicateGroups.size
   const errorCount = activeSession?.errorLog?.filter((e) => !e.retried).length ?? 0
   const thumbsRemaining = pendingThumbs.size
-  const unprocessedCount = files.filter((f) => !f.processed).length
-  const noDateCount = files.filter((f) => f.dateStatus === 'missing').length
-  const mismatchCount = files.filter((f) => f.dateStatus === 'mismatch').length
+  const { unprocessedCount, noDateCount, mismatchCount } = React.useMemo(() => ({
+    unprocessedCount: files.filter((f) => !f.processed).length,
+    noDateCount: files.filter((f) => !f.processed && f.dateStatus === 'missing').length,
+    mismatchCount: files.filter((f) => !f.processed && f.dateStatus === 'mismatch').length,
+  }), [files])
 
   // Select mode: derived from whether anything is selected
   const selectMode = selectedIds.size > 0
@@ -547,26 +622,42 @@ export function ExplorerPage(): React.JSX.Element {
   const lightboxIndex = lightboxFileId ? filtered.findIndex((f) => f.id === lightboxFileId) : -1
   const lightboxFile = lightboxIndex >= 0 ? filtered[lightboxIndex] : null
 
-  // Year groups for the grid view (computed from filtered, not all files)
-  const gridYearGroups = React.useMemo(() => {
-    const map = new Map<string, { key: string; label: string; files: MediaFile[] }>()
+  // Column count for grid view — recalculates on resize (sidebar=208px, padding=32px, card+gap=152px)
+  const [gridCols, setGridCols] = React.useState(() =>
+    Math.max(2, Math.floor((window.innerWidth - 240) / 152))
+  )
+  React.useEffect(() => {
+    const handler = (): void => setGridCols(Math.max(2, Math.floor((window.innerWidth - 240) / 152)))
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
+
+  // Flatten filtered files into VList items: year headers + rows of gridCols cards
+  type GridItem =
+    | { type: 'header'; label: string; count: number; isFirst: boolean }
+    | { type: 'row'; files: MediaFile[]; rowKey: string }
+
+  const gridItems = React.useMemo((): GridItem[] => {
+    const groups = new Map<string, { label: string; files: MediaFile[] }>()
     for (const file of filtered) {
       const key = file.resolvedYear?.toString() ?? 'no-date'
-      if (!map.has(key)) {
-        map.set(key, {
-          key,
-          label: file.resolvedYear?.toString() ?? 'No date',
-          files: []
-        })
-      }
-      map.get(key)!.files.push(file)
+      if (!groups.has(key)) groups.set(key, { label: file.resolvedYear?.toString() ?? 'No date', files: [] })
+      groups.get(key)!.files.push(file)
     }
-    return Array.from(map.values()).sort((a, b) => {
-      if (a.key === 'no-date') return 1
-      if (b.key === 'no-date') return -1
-      return parseInt(a.key) - parseInt(b.key)
+    const sorted = Array.from(groups.entries()).sort(([a], [b]) => {
+      if (a === 'no-date') return 1
+      if (b === 'no-date') return -1
+      return parseInt(a) - parseInt(b)
     })
-  }, [filtered])
+    const items: GridItem[] = []
+    sorted.forEach(([key, { label, files }], groupIdx) => {
+      items.push({ type: 'header', label, count: files.length, isFirst: groupIdx === 0 })
+      for (let i = 0; i < files.length; i += gridCols) {
+        items.push({ type: 'row', files: files.slice(i, i + gridCols), rowKey: `${key}-${i}` })
+      }
+    })
+    return items
+  }, [filtered, gridCols])
 
   function handleSelectAll(): void {
     if (selectedIds.size === filtered.length) deselectAll()
@@ -608,6 +699,10 @@ export function ExplorerPage(): React.JSX.Element {
               <span className="text-xs">{errorCount} errors</span>
             </Button>
           )}
+          <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={addFolderToSort}>
+            <FolderPlus className="h-3.5 w-3.5" />
+            Add folder
+          </Button>
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -742,7 +837,7 @@ export function ExplorerPage(): React.JSX.Element {
               {(() => {
                 const dateIssueCount = useFilesStore
                   .getState()
-                  .files.filter((f) => f.dateStatus !== 'ok').length
+                  .files.filter((f) => !f.processed && f.dateStatus !== 'ok').length
                 return dateIssueCount > 0 ? (
                   <>
                     <Separator className="my-2" />
@@ -868,105 +963,96 @@ export function ExplorerPage(): React.JSX.Element {
             </div>
           </div>
 
-          {/* File list / grid — native overflow so horizontal scroll works (Radix ScrollArea hides overflow-x without a horizontal ScrollBar) */}
-          <div className={cn('min-h-0 flex-1 overflow-auto', selectedIds.size > 0 && 'pb-16')}>
+          {/* File list / grid */}
+          <div className={cn('min-h-0 flex-1 flex flex-col', selectedIds.size > 0 && 'pb-16')}>
             {viewMode === 'list' ? (
-              <div className="p-2">
-                <div className="min-w-[52rem] space-y-0.5">
-                  {/* Column headers */}
-                  <div className="flex min-w-0 items-center gap-3 px-3 py-1 text-xs font-medium text-muted-foreground">
-                    <div className="w-4 shrink-0" />
-                    <div className="w-10 shrink-0" />
-                    {(['name', 'processed', 'size', 'date'] as const).map((col) => {
-                      if (col === 'processed') {
+              <>
+                {/* Column headers — outside VList so they stay fixed while rows scroll */}
+                <div className="shrink-0 overflow-x-auto border-b">
+                  <div className="min-w-[52rem] px-2 pt-2 pb-1">
+                    <div className="flex min-w-0 items-center gap-3 px-3 py-1 text-xs font-medium text-muted-foreground">
+                      <div className="w-4 shrink-0" />
+                      <div className="w-10 shrink-0" />
+                      {(['name', 'processed', 'size', 'date'] as const).map((col) => {
+                        if (col === 'processed') {
+                          return <div key={col} className="w-28 shrink-0">Processed</div>
+                        }
+                        const active = sortCol === col
+                        const Icon = active ? (sortDir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
+                        const label = col === 'name' ? 'Name / Path' : col === 'size' ? 'Size' : 'Date'
+                        const cls = col === 'name' ? 'min-w-0 flex-1' : col === 'size' ? 'w-16 shrink-0 justify-end' : 'w-28 shrink-0 justify-end'
                         return (
-                          <div key={col} className="w-28 shrink-0">
-                            Processed
-                          </div>
+                          <button key={col} type="button"
+                            className={cn('flex min-w-0 items-center gap-1 cursor-pointer hover:text-foreground transition-colors select-none', cls, active && 'text-foreground')}
+                            onClick={() => handleSort(col)}
+                          >
+                            {col !== 'name' && <Icon className="h-3 w-3 shrink-0" />}
+                            {label}
+                            {col === 'name' && <Icon className="h-3 w-3 shrink-0" />}
+                          </button>
                         )
-                      }
-                      const active = sortCol === col
-                      const Icon = active ? (sortDir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
-                      const label =
-                        col === 'name' ? 'Name / Path' : col === 'size' ? 'Size' : 'Date'
-                      const cls =
-                        col === 'name'
-                          ? 'min-w-0 flex-1'
-                          : col === 'size'
-                            ? 'w-16 shrink-0 justify-end'
-                            : 'w-28 shrink-0 justify-end'
-                      return (
-                        <button
-                          key={col}
-                          type="button"
-                          className={cn(
-                            'flex min-w-0 items-center gap-1 cursor-pointer hover:text-foreground transition-colors select-none',
-                            cls,
-                            active && 'text-foreground'
-                          )}
-                          onClick={() => handleSort(col)}
-                        >
-                          {col !== 'name' && <Icon className="h-3 w-3 shrink-0" />}
-                          {label}
-                          {col === 'name' && <Icon className="h-3 w-3 shrink-0" />}
-                        </button>
-                      )
-                    })}
-                    <div className="w-20 shrink-0 text-right">Date Status</div>
-                    <div className="w-6 shrink-0" />
+                      })}
+                      <div className="w-20 shrink-0 text-right">Date Status</div>
+                      <div className="w-6 shrink-0" />
+                    </div>
                   </div>
-                  <Separator />
-                  {filtered.map((file) => (
-                    <FileRow
-                      key={file.id}
-                      file={file}
-                      selected={selectedIds.has(file.id)}
-                      onToggle={() => toggleSelect(file.id)}
-                      thumbLoading={pendingThumbs.has(file.id)}
-                      onFixDate={setFixingFile}
-                    />
-                  ))}
-                  {filtered.length === 0 && (
-                    <div className="py-16 text-center text-sm text-muted-foreground">
-                      No files match the current filters
-                    </div>
-                  )}
                 </div>
-              </div>
-            ) : (
-              <div className="p-4 space-y-8">
-                {gridYearGroups.map((group) => (
-                  <div key={group.key}>
-                    <div className="mb-3 flex items-center justify-between">
-                      <h3 className="text-sm font-semibold">{group.label}</h3>
-                      <span className="text-xs text-muted-foreground">
-                        {group.files.length} {group.files.length === 1 ? 'file' : 'files'}
-                      </span>
-                    </div>
-                    <div
-                      className="grid gap-3"
-                      style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}
-                    >
-                      {group.files.map((file) => (
-                        <GridCard
-                          key={file.id}
+                {filtered.length === 0 ? (
+                  <div className="py-16 text-center text-sm text-muted-foreground">
+                    No files match the current filters
+                  </div>
+                ) : (
+                  <VList className="flex-1 overflow-x-auto" style={{ paddingLeft: '0.5rem', paddingRight: '0.5rem', paddingBottom: '0.5rem' }}>
+                    {filtered.map((file) => (
+                      <div key={file.id} className="min-w-[52rem]">
+                        <FileRow
                           file={file}
                           selected={selectedIds.has(file.id)}
                           onToggle={() => toggleSelect(file.id)}
                           thumbLoading={pendingThumbs.has(file.id)}
-                          onOpen={() => setLightboxFileId(file.id)}
-                          selectMode={selectMode}
+                          onFixDate={setFixingFile}
                         />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-                {filtered.length === 0 && (
-                  <div className="py-16 text-center text-sm text-muted-foreground">
-                    No files match the current filters
-                  </div>
+                      </div>
+                    ))}
+                  </VList>
                 )}
+              </>
+            ) : filtered.length === 0 ? (
+              <div className="py-16 text-center text-sm text-muted-foreground">
+                No files match the current filters
               </div>
+            ) : (
+              <VList className="flex-1">
+                {gridItems.map((item) =>
+                  item.type === 'header' ? (
+                    <div
+                      key={`header-${item.label}`}
+                      className={cn('flex items-center justify-between px-4 pb-2', item.isFirst ? 'pt-4' : 'pt-6')}
+                    >
+                      <h3 className="text-sm font-semibold">{item.label}</h3>
+                      <span className="text-xs text-muted-foreground">
+                        {item.count} {item.count === 1 ? 'file' : 'files'}
+                      </span>
+                    </div>
+                  ) : (
+                    <div key={item.rowKey} className="px-4 pb-3">
+                      <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}>
+                        {item.files.map((file) => (
+                          <GridCard
+                            key={file.id}
+                            file={file}
+                            selected={selectedIds.has(file.id)}
+                            onToggle={() => toggleSelect(file.id)}
+                            thumbLoading={pendingThumbs.has(file.id)}
+                            onOpen={() => setLightboxFileId(file.id)}
+                            selectMode={selectMode}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )
+                )}
+              </VList>
             )}
           </div>
         </div>

@@ -41,18 +41,35 @@ async function readCached(fileId: string): Promise<string | null> {
 async function generateImageThumbnail(filePath: string, fileId: string): Promise<string | null> {
   const cached = await readCached(fileId)
   if (cached) return cached
+  const tp = thumbPath(fileId)
   try {
-    const tp = thumbPath(fileId)
-    await sharp(filePath)
+    // failOn:'error' tolerates partial/tile warnings so corrupted-but-readable JPEGs still produce a thumb
+    await sharp(filePath, { failOn: 'error' })
       .rotate() // apply EXIF orientation before resizing
       .resize(THUMB_SIZE, THUMB_SIZE, { fit: 'cover', position: 'centre' })
       .jpeg({ quality: 75 })
       .toFile(tp)
     const data = await readFile(tp)
     return `data:image/jpeg;base64,${data.toString('base64')}`
-  } catch (err) {
-    console.error('[thumbnail] failed for', filePath, err)
-    return null
+  } catch {
+    // Some JPEGs are actually HEIC/HEIF internally — fall back to sips
+    try {
+      const tmp = tp + '.conv.jpg'
+      await new Promise<void>((resolve, reject) => {
+        execFile('sips', ['-s', 'format', 'jpeg', filePath, '--out', tmp],
+          (err) => (err ? reject(err) : resolve()))
+      })
+      await sharp(tmp, { failOn: 'error' })
+        .rotate()
+        .resize(THUMB_SIZE, THUMB_SIZE, { fit: 'cover', position: 'centre' })
+        .jpeg({ quality: 75 })
+        .toFile(tp)
+      require('fs').unlinkSync(tmp)
+      const data = await readFile(tp)
+      return `data:image/jpeg;base64,${data.toString('base64')}`
+    } catch {
+      return null
+    }
   }
 }
 

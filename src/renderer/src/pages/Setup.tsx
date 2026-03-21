@@ -31,7 +31,7 @@ import {
 import { cn } from '@/lib/utils'
 import type { TransferMode } from '../../../shared/types'
 
-// Returns a conflict reason if outputFolder overlaps with any sourceFolder, null otherwise
+// Returns a conflict reason if library overlaps with any folder-to-sort, null otherwise
 function getPathConflict(sourceFolders: string[], outputFolder: string): string | null {
   if (!outputFolder) return null
   const normalize = (p: string): string => (p.endsWith('/') ? p : p + '/')
@@ -40,13 +40,13 @@ function getPathConflict(sourceFolders: string[], outputFolder: string): string 
   for (const src of sourceFolders) {
     const normSrc = normalize(src)
     if (normSrc === normOut || src === outputFolder) {
-      return `The destination folder is the same as a source folder (${src}). This would overwrite source files.`
+      return `The library folder is the same as a folder to sort (${src}). This would overwrite source files.`
     }
     if (normOut.startsWith(normSrc)) {
-      return `The destination folder is inside a source folder (${src}). The scan would pick up its own output, creating an infinite loop.`
+      return `The library folder is inside a folder to sort (${src}). The scan would pick up its own output, creating an infinite loop.`
     }
     if (normSrc.startsWith(normOut)) {
-      return `A source folder (${src}) is inside the destination folder. In move mode this would delete files from inside the destination.`
+      return `A folder to sort (${src}) is inside the library folder. In move mode this would delete files from inside the library.`
     }
   }
   return null
@@ -109,7 +109,7 @@ export function SetupPage(): React.JSX.Element {
     setPage('scan')
   }
 
-  const canStart = sourceFolders.length > 0 && !pathConflict
+  const canStart = (sourceFolders.length > 0 || !!outputFolder) && !pathConflict
 
   return (
     <div className="flex h-screen flex-col">
@@ -123,7 +123,7 @@ export function SetupPage(): React.JSX.Element {
           </Button>
           <div>
             <h1 className="text-xl font-bold">Session Setup</h1>
-            <p className="text-sm text-muted-foreground">Configure your source and destination folders</p>
+            <p className="text-sm text-muted-foreground">Set up your photo library and folders to sort</p>
           </div>
         </div>
 
@@ -142,13 +142,68 @@ export function SetupPage(): React.JSX.Element {
             />
           </div>
 
-          {/* Source folders */}
+          {/* Photo library (output folder) */}
+          <div className="space-y-3">
+            <div>
+              <Label>Photo library</Label>
+              <p className="text-xs text-muted-foreground">
+                Your organized archive, structured by year (e.g.{' '}
+                <code className="text-xs">YYYY/</code>). Files already sorted here appear as processed.
+              </p>
+            </div>
+
+            {outputFolder ? (
+              <div
+                className={cn(
+                  'flex items-center gap-3 rounded-md border px-3 py-2',
+                  pathConflict ? 'border-destructive bg-destructive/5' : 'bg-muted/30'
+                )}
+              >
+                <FolderOutput
+                  className={cn(
+                    'h-4 w-4 shrink-0',
+                    pathConflict ? 'text-destructive' : 'text-muted-foreground'
+                  )}
+                />
+                <span className="min-w-0 flex-1 truncate text-sm font-mono">{outputFolder}</span>
+                <Badge variant="secondary" className="shrink-0 text-xs">
+                  Library
+                </Badge>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 text-muted-foreground"
+                  onClick={pickOutputFolder}
+                >
+                  Change
+                </Button>
+              </div>
+            ) : (
+              <button
+                className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border p-6 text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+                onClick={pickOutputFolder}
+              >
+                <FolderOutput className="h-5 w-5" />
+                <span className="text-sm">Click to set your photo library folder</span>
+              </button>
+            )}
+
+            {/* Inline conflict error */}
+            {pathConflict && (
+              <div className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/5 px-3 py-2.5">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                <p className="text-xs text-destructive">{pathConflict}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Folders to sort */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <Label>Source folders</Label>
+                <Label>Folders to sort</Label>
                 <p className="text-xs text-muted-foreground">
-                  Folders to scan for photos and videos (recursive)
+                  Unsorted media to organize into your library. Optional — skip this to browse your library only.
                 </p>
               </div>
               <Button variant="outline" size="sm" onClick={pickSourceFolder}>
@@ -163,7 +218,7 @@ export function SetupPage(): React.JSX.Element {
                 onClick={pickSourceFolder}
               >
                 <FolderOpen className="h-5 w-5" />
-                <span className="text-sm">Click to add a source folder</span>
+                <span className="text-sm">Click to add a folder to sort</span>
               </button>
             ) : (
               <div className="space-y-2">
@@ -197,67 +252,12 @@ export function SetupPage(): React.JSX.Element {
             )}
           </div>
 
-          {/* Output folder */}
-          <div className="space-y-3">
-            <div>
-              <Label>Destination folder</Label>
-              <p className="text-xs text-muted-foreground">
-                Where year folders will be created (e.g.{' '}
-                <code className="text-xs">YYYY/</code>)
-              </p>
-            </div>
-
-            {outputFolder ? (
-              <div
-                className={cn(
-                  'flex items-center gap-3 rounded-md border px-3 py-2',
-                  pathConflict ? 'border-destructive bg-destructive/5' : 'bg-muted/30'
-                )}
-              >
-                <FolderOutput
-                  className={cn(
-                    'h-4 w-4 shrink-0',
-                    pathConflict ? 'text-destructive' : 'text-muted-foreground'
-                  )}
-                />
-                <span className="min-w-0 flex-1 truncate text-sm font-mono">{outputFolder}</span>
-                <Badge variant="secondary" className="shrink-0 text-xs">
-                  Output
-                </Badge>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="shrink-0 text-muted-foreground"
-                  onClick={pickOutputFolder}
-                >
-                  Change
-                </Button>
-              </div>
-            ) : (
-              <button
-                className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border p-6 text-muted-foreground transition-colors hover:border-primary hover:text-primary"
-                onClick={pickOutputFolder}
-              >
-                <FolderOutput className="h-5 w-5" />
-                <span className="text-sm">Click to set output folder</span>
-              </button>
-            )}
-
-            {/* Inline conflict error */}
-            {pathConflict && (
-              <div className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/5 px-3 py-2.5">
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-                <p className="text-xs text-destructive">{pathConflict}</p>
-              </div>
-            )}
-          </div>
-
           {/* Transfer mode */}
           <div className="space-y-3">
             <div>
               <Label>Transfer mode</Label>
               <p className="text-xs text-muted-foreground">
-                How files are moved to the destination
+                How files are moved from sorted folders into the library
               </p>
             </div>
 
@@ -322,7 +322,9 @@ export function SetupPage(): React.JSX.Element {
         {/* Footer */}
         <div className="flex items-center justify-between pt-4">
           <p className="text-xs text-muted-foreground">
-            {transferMode === 'copy'
+            {sourceFolders.length === 0
+              ? 'Library-only mode — browse and review your organized media'
+              : transferMode === 'copy'
               ? 'Files will be copied — originals are never modified'
               : 'Files will be moved — originals will be deleted after transfer'}
           </p>

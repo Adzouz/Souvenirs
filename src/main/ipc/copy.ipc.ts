@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import { join, dirname, basename, extname } from 'path'
-import { existsSync, mkdirSync } from 'fs'
+import { existsSync, mkdirSync, createReadStream, statSync } from 'fs'
+import { createHash } from 'crypto'
 import { copy, move } from 'fs-extra'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
@@ -26,6 +27,35 @@ function fileAlreadyExists(destPath: string): boolean {
   return existsSync(destPath)
 }
 
+const SKIP = 131072  // 128 KB
+const SAMPLE = 131072 // 128 KB
+
+function skipHeaderHash(filePath: string, fileSize: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = createHash('sha1')
+    const start = Math.min(SKIP, Math.floor(fileSize / 2))
+    const end = Math.min(start + SAMPLE - 1, fileSize - 1)
+    const stream = createReadStream(filePath, { start, end })
+    stream.on('data', (chunk) => hash.update(chunk))
+    stream.on('end', () => resolve(hash.digest('hex')))
+    stream.on('error', reject)
+  })
+}
+
+async function sameContent(srcPath: string, destPath: string): Promise<boolean> {
+  try {
+    const srcSize = statSync(srcPath).size
+    const destSize = statSync(destPath).size
+    const [srcHash, destHash] = await Promise.all([
+      skipHeaderHash(srcPath, srcSize),
+      skipHeaderHash(destPath, destSize)
+    ])
+    return srcHash === destHash
+  } catch {
+    return false
+  }
+}
+
 export function registerCopyHandlers(): void {
   ipcMain.handle(
     'copy:preview',
@@ -35,18 +65,35 @@ export function registerCopyHandlers(): void {
       if (!session || !session.outputFolder) return []
 
       const actions: CopyAction[] = []
+      // Track all destination paths claimed in this batch to detect within-batch collisions
+      const claimedPaths = new Set<string>()
 
       for (const fileId of fileIds) {
         const file = session.files.find((f) => f.id === fileId)
-        if (!file) continue
+        if (!file || file.processed) continue
 
         const yearDir = file.resolvedYear ? String(file.resolvedYear) : 'NoDate'
         let proposedName = file.name
         let willRename = false
 
         const destPath = getDestPath(session.outputFolder, file.resolvedYear, file.name)
+        let alreadySynced = false
+
         if (fileAlreadyExists(destPath)) {
-          // Generate a unique name: YYYYMMDDHHmmss-{shortId}.ext
+          if (await sameContent(file.path, destPath)) {
+            // Identical content at destination
+            if (session.transferMode !== 'move') continue // copy mode: nothing to do
+            alreadySynced = true // move mode: need to delete source
+          } else {
+            // Different content: rename to avoid overwriting
+            willRename = true
+          }
+        } else if (claimedPaths.has(destPath)) {
+          // Within-batch collision: rename to avoid overwriting
+          willRename = true
+        }
+
+        if (willRename) {
           const d = file.resolvedDate ? new Date(file.resolvedDate) : new Date()
           const stamp = [
             d.getFullYear(),
@@ -57,20 +104,23 @@ export function registerCopyHandlers(): void {
             String(d.getSeconds()).padStart(2, '0')
           ].join('')
           const shortId = Math.random().toString(36).slice(2, 7)
-          const ext = extname(file.name)
-          proposedName = `${stamp}-${shortId}${ext}`
-          willRename = true
+          proposedName = `${stamp}-${shortId}${extname(file.name)}`
         }
+
+        const finalDestPath = join(session.outputFolder, yearDir, proposedName)
+        if (!alreadySynced) claimedPaths.add(finalDestPath)
 
         actions.push({
           fileId,
           sourcePath: file.path,
-          destPath: join(session.outputFolder, yearDir, proposedName),
+          destPath: finalDestPath,
           willRename,
           proposedName,
-          fixDate: file.dateStatus !== 'ok',
-          fixedDate: file.resolvedDate,
-          isDuplicate: !!file.duplicateGroupId
+          fixDate: !alreadySynced && (file.overrideDate !== null || file.dateStatus !== 'ok'),
+          fixedDate: file.overrideDate ?? file.resolvedDate,
+          isDuplicate: !!file.duplicateGroupId,
+          duplicateType: file.duplicateType ?? null,
+          alreadySynced
         })
       }
 
@@ -103,14 +153,20 @@ export function registerCopyHandlers(): void {
         win?.webContents.send('copy:progress', progress)
 
         try {
-          // Ensure destination directory exists
-          mkdirSync(dirname(action.destPath), { recursive: true })
-
-          // Copy or move file depending on session transfer mode
-          if (session.transferMode === 'move') {
-            await move(action.sourcePath, action.destPath, { overwrite: false })
+          if (action.alreadySynced) {
+            // Destination already has identical content — just delete source in move mode
+            const { unlink } = await import('fs/promises')
+            await unlink(action.sourcePath)
           } else {
-            await copy(action.sourcePath, action.destPath, { overwrite: false })
+            // Ensure destination directory exists
+            mkdirSync(dirname(action.destPath), { recursive: true })
+
+            // Copy or move file depending on session transfer mode
+            if (session.transferMode === 'move') {
+              await move(action.sourcePath, action.destPath, { overwrite: false })
+            } else {
+              await copy(action.sourcePath, action.destPath, { overwrite: false })
+            }
           }
 
           // Fix EXIF date on the copy if needed

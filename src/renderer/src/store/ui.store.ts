@@ -15,6 +15,8 @@ interface UiState {
   errorLogOpen: boolean
   dependencies: DependencyStatus | null
   theme: Theme
+  // When set, the scan page performs an incremental scan of only this folder
+  incrementalScanFolder: string | null
 
   setPage: (page: AppPage) => void
   setScanProgress: (progress: ScanProgress | null) => void
@@ -22,6 +24,7 @@ interface UiState {
   setErrorLogOpen: (open: boolean) => void
   setDependencies: (deps: DependencyStatus) => void
   setTheme: (theme: Theme) => void
+  setIncrementalScanFolder: (folder: string | null) => void
 }
 
 const savedTheme = (localStorage.getItem('theme') as Theme | null) ?? 'light'
@@ -34,12 +37,14 @@ export const useUiStore = create<UiState>((set) => ({
   errorLogOpen: false,
   dependencies: null,
   theme: savedTheme,
+  incrementalScanFolder: null,
 
   setPage: (page) => set({ page }),
   setScanProgress: (scanProgress) => set({ scanProgress }),
   setCopyProgress: (copyProgress) => set({ copyProgress }),
   setErrorLogOpen: (errorLogOpen) => set({ errorLogOpen }),
   setDependencies: (dependencies) => set({ dependencies }),
+  setIncrementalScanFolder: (incrementalScanFolder) => set({ incrementalScanFolder }),
   setTheme: (theme) => {
     localStorage.setItem('theme', theme)
     applyTheme(theme)

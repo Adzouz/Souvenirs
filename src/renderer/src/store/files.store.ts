@@ -15,12 +15,16 @@ interface FilesState {
   selectedIds: Set<string>
   viewMode: ViewMode
   filter: FilesFilter
+  // Thumbnails stored separately so updates don't invalidate the files array
+  thumbnails: Map<string, string>
   thumbnailsLoading: Set<string>
 
   setFiles: (files: MediaFile[]) => void
+  mergeFiles: (newFiles: MediaFile[]) => void
   updateFile: (id: string, partial: Partial<MediaFile>) => void
   removeFile: (id: string) => void
   setThumbnail: (id: string, dataUrl: string) => void
+  setThumbnailBatch: (batch: Map<string, string>) => void
 
   toggleSelect: (id: string) => void
   selectAll: () => void
@@ -51,9 +55,49 @@ export const useFilesStore = create<FilesState>((set, get) => ({
   selectedIds: new Set(),
   viewMode: 'list',
   filter: defaultFilter,
+  thumbnails: new Map(),
   thumbnailsLoading: new Set(),
 
-  setFiles: (files) => set((state) => ({ files, selectedIds: new Set(), scanVersion: state.scanVersion + 1 })),
+  setFiles: (files) => set((state) => ({
+    files,
+    thumbnails: new Map(),
+    thumbnailsLoading: new Set(),
+    selectedIds: new Set(),
+    scanVersion: state.scanVersion + 1
+  })),
+
+  // Appends new files to existing ones, re-runs name+year duplicate detection,
+  // and bumps scanVersion so thumbnail generation picks up the new entries.
+  mergeFiles: (newFiles) => set((state) => {
+    const merged = [...state.files, ...newFiles]
+
+    // Clear name-duplicate flags on non-processed source files only.
+    // Content-duplicate flags are preserved — don't overwrite them.
+    merged.forEach((f) => {
+      if (f.duplicateType === 'name' && !f.processed) {
+        f.duplicateGroupId = null
+        f.duplicateType = null
+      }
+    })
+
+    // Re-run name+year detection on source (non-processed) files only,
+    // skipping files already in a content-duplicate group.
+    const nameYearMap = new Map<string, MediaFile[]>()
+    for (const f of merged) {
+      if (f.processed || f.duplicateType === 'content') continue
+      const key = `${f.name}::${f.resolvedYear ?? 'nodate'}`
+      const group = nameYearMap.get(key) ?? []
+      group.push(f)
+      nameYearMap.set(key, group)
+    }
+    for (const group of nameYearMap.values()) {
+      if (group.length < 2) continue
+      const groupId = group.map((f) => f.path).join('|')
+      group.forEach((f) => { f.duplicateGroupId = groupId; f.duplicateType = 'name' })
+    }
+
+    return { files: merged, scanVersion: state.scanVersion + 1 }
+  }),
 
   updateFile: (id, partial) =>
     set((state) => ({
@@ -66,11 +110,27 @@ export const useFilesStore = create<FilesState>((set, get) => ({
       selectedIds: new Set([...state.selectedIds].filter((s) => s !== id))
     })),
 
+  // O(1) — does NOT touch the files array, so filtered/yearGroups stay valid
   setThumbnail: (id, dataUrl) =>
-    set((state) => ({
-      files: state.files.map((f) => (f.id === id ? { ...f, thumbnail: dataUrl } : f)),
-      thumbnailsLoading: new Set([...state.thumbnailsLoading].filter((x) => x !== id))
-    })),
+    set((state) => {
+      const thumbnails = new Map(state.thumbnails)
+      thumbnails.set(id, dataUrl)
+      const thumbnailsLoading = new Set(state.thumbnailsLoading)
+      thumbnailsLoading.delete(id)
+      return { thumbnails, thumbnailsLoading }
+    }),
+
+  // Batch version for flushing multiple thumbnails at once
+  setThumbnailBatch: (batch) =>
+    set((state) => {
+      const thumbnails = new Map(state.thumbnails)
+      const thumbnailsLoading = new Set(state.thumbnailsLoading)
+      for (const [id, url] of batch) {
+        thumbnails.set(id, url)
+        thumbnailsLoading.delete(id)
+      }
+      return { thumbnails, thumbnailsLoading }
+    }),
 
   toggleSelect: (id) =>
     set((state) => {
@@ -159,6 +219,11 @@ export const useFilesStore = create<FilesState>((set, get) => ({
       const existing = map.get(f.duplicateGroupId) ?? []
       map.set(f.duplicateGroupId, [...existing, f])
     }
-    return map
+    // Remove stale singleton groups (pair was deleted or never correctly linked)
+    const result = new Map<string, MediaFile[]>()
+    for (const [id, group] of map) {
+      if (group.length >= 2) result.set(id, group)
+    }
+    return result
   }
 }))

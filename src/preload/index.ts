@@ -35,6 +35,8 @@ const api = {
       ipcRenderer.invoke('dialog:openFolderInFinder', path),
     openFile: (path: string): Promise<void> => ipcRenderer.invoke('dialog:openFile', path),
     trashFile: (path: string): Promise<void> => ipcRenderer.invoke('dialog:trashFile', path),
+    renameFile: (oldPath: string, newName: string): Promise<string> =>
+      ipcRenderer.invoke('dialog:renameFile', oldPath, newName),
     readImageAsDataUrl: (path: string): Promise<string | null> =>
       ipcRenderer.invoke('dialog:readImageAsDataUrl', path),
     pathToFileUrl: (path: string): Promise<string> => ipcRenderer.invoke('dialog:pathToFileUrl', path),
@@ -46,6 +48,8 @@ const api = {
   scanner: {
     scan: (sessionId: string, sourceFolders: string[]): Promise<MediaFile[]> =>
       ipcRenderer.invoke('scanner:scan', sessionId, sourceFolders),
+    scanNew: (sessionId: string, newFolder: string, existingPaths: string[]): Promise<MediaFile[]> =>
+      ipcRenderer.invoke('scanner:scanNew', sessionId, newFolder, existingPaths),
     cancel: (): Promise<void> => ipcRenderer.invoke('scanner:cancel'),
     onProgress: (cb: (progress: ScanProgress) => void): (() => void) => {
       const handler = (_: Electron.IpcRendererEvent, progress: ScanProgress): void => cb(progress)
