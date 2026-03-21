@@ -88,6 +88,13 @@ export function PreviewPage(): React.JSX.Element {
           updateFile(f.id, {
             status: f.status,
             processed: f.processed,
+            destPath: f.destPath,
+            exifDate: f.exifDate,
+            resolvedDate: f.resolvedDate,
+            resolvedYear: f.resolvedYear,
+            dateStatus: f.dateStatus,
+            dateFixed: f.dateFixed,
+            overrideDate: f.overrideDate,
             errorMessage: f.errorMessage
           })
         }
@@ -109,7 +116,17 @@ export function PreviewPage(): React.JSX.Element {
 
   const syncedCount = actions.filter((a) => a.alreadySynced).length
   const activeActions = actions.filter((a) => !a.alreadySynced)
-  const dateFix = activeActions.filter((a) => a.fixDate).length
+  const autoFixCount = activeActions.filter((a) => {
+    if (!a.fixDate) return false
+    const file = files.find((f) => f.id === a.fileId)
+    return !file?.overrideDate
+  }).length
+  const configuredFixCount = activeActions.filter((a) => {
+    if (!a.fixDate) return false
+    const file = files.find((f) => f.id === a.fileId)
+    return !!file?.overrideDate
+  }).length
+  const dateFix = autoFixCount + configuredFixCount
   const dupeCount = activeActions.filter((a) => a.isDuplicate).length
   const nameConflictCount = activeActions.filter((a) => a.duplicateType === 'name').length
 
@@ -274,10 +291,16 @@ export function PreviewPage(): React.JSX.Element {
           <div className="flex shrink-0 items-center gap-4 border-b bg-muted/30 px-6 py-2 text-xs text-muted-foreground">
             <span className="font-medium text-foreground">{activeActions.length} files</span>
             <span>{formatBytes(totalSize)}</span>
-            {dateFix > 0 && (
+            {configuredFixCount > 0 && (
               <Badge variant="outline" className="gap-1 text-blue-600 border-blue-300">
                 <CalendarClock className="h-2.5 w-2.5" />
-                {dateFix} date fix{dateFix !== 1 ? 'es' : ''}
+                {configuredFixCount} date fixed
+              </Badge>
+            )}
+            {autoFixCount > 0 && (
+              <Badge variant="outline" className="gap-1 text-muted-foreground">
+                <CalendarClock className="h-2.5 w-2.5" />
+                {autoFixCount} auto fix
               </Badge>
             )}
             {dupeCount > 0 && (
@@ -358,12 +381,21 @@ export function PreviewPage(): React.JSX.Element {
                           {/* Badges */}
                           <div className="flex items-center gap-1 shrink-0">
                             {action.fixDate && (
-                              <Badge
-                                variant="outline"
-                                className="h-4 text-[10px] px-1.5 text-blue-600 border-blue-300"
-                              >
-                                Date fix
-                              </Badge>
+                              file?.overrideDate ? (
+                                <Badge
+                                  variant="outline"
+                                  className="h-4 text-[10px] px-1.5 text-blue-600 border-blue-300"
+                                >
+                                  Date fixed
+                                </Badge>
+                              ) : (
+                                <Badge
+                                  variant="outline"
+                                  className="h-4 text-[10px] px-1.5 text-muted-foreground border-muted-foreground/30"
+                                >
+                                  Auto fix
+                                </Badge>
+                              )
                             )}
                             {action.isDuplicate && (
                               <Badge
@@ -393,11 +425,11 @@ export function PreviewPage(): React.JSX.Element {
               </p>
             </div>
           )}
-          {dateFix > 0 && (
+          {autoFixCount > 0 && (
             <div className="flex items-center gap-3 border-t border-blue-200 dark:border-blue-700 bg-blue-50 dark:bg-blue-950 px-6 py-2">
               <CalendarClock className="h-4 w-4 shrink-0 text-blue-500" />
               <p className="flex-1 text-xs text-blue-900 dark:text-blue-100">
-                {dateFix} file{dateFix !== 1 ? 's' : ''} with mismatched dates will be automatically
+                {autoFixCount} file{autoFixCount !== 1 ? 's' : ''} with mismatched dates will be automatically
                 fixed. If you want, you can go back and fix them yourself. Your originals won't be
                 affected.
               </p>

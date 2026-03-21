@@ -8,6 +8,8 @@ A desktop app to sort your photos and videos by year. Point it at one or more so
 
 ![Souvenirs screenshot](docs/screenshot.png)
 
+<video src="docs/demo.mp4" controls width="100%"></video>
+
 ## Features
 
 - **Session-based workflow** — create named sessions, each with its own source folders and destination

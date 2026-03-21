@@ -72,11 +72,14 @@ export function registerCopyHandlers(): void {
         const file = session.files.find((f) => f.id === fileId)
         if (!file || file.processed) continue
 
-        const yearDir = file.resolvedYear ? String(file.resolvedYear) : 'NoDate'
+        const effectiveYear = file.overrideDate
+          ? new Date(file.overrideDate).getFullYear()
+          : file.resolvedYear
+        const yearDir = effectiveYear ? String(effectiveYear) : 'NoDate'
         let proposedName = file.name
         let willRename = false
 
-        const destPath = getDestPath(session.outputFolder, file.resolvedYear, file.name)
+        const destPath = getDestPath(session.outputFolder, effectiveYear, file.name)
         let alreadySynced = false
 
         if (fileAlreadyExists(destPath)) {
@@ -202,6 +205,16 @@ export function registerCopyHandlers(): void {
           if (fileIdx !== -1) {
             session.files[fileIdx].status = session.transferMode === 'move' ? 'moved' : 'copied'
             session.files[fileIdx].processed = true
+            session.files[fileIdx].destPath = action.destPath
+            // If a date fix was applied, update date fields to reflect the destination
+            if (action.fixDate && action.fixedDate) {
+              session.files[fileIdx].exifDate = action.fixedDate
+              session.files[fileIdx].resolvedDate = action.fixedDate
+              session.files[fileIdx].resolvedYear = new Date(action.fixedDate).getFullYear()
+              session.files[fileIdx].dateStatus = 'ok'
+              session.files[fileIdx].dateFixed = true
+              session.files[fileIdx].overrideDate = null
+            }
           }
 
           copied++

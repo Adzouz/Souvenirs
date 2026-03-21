@@ -57,9 +57,7 @@ export function SetupPage(): React.JSX.Element {
   const { setPage } = useUiStore()
 
   const [sessionName, setSessionName] = useState(activeSession?.name ?? '')
-  const [sourceFolders, setSourceFolders] = useState<string[]>(
-    activeSession?.sourceFolders ?? []
-  )
+  const [sourceFolders, setSourceFolders] = useState<string[]>(activeSession?.sourceFolders ?? [])
   const [outputFolder, setOutputFolder] = useState<string>(activeSession?.outputFolder ?? '')
   const [transferMode, setTransferMode] = useState<TransferMode>(
     activeSession?.transferMode ?? 'copy'
@@ -102,7 +100,13 @@ export function SetupPage(): React.JSX.Element {
     if (!session) {
       session = await window.api.sessions.create(name, sourceFolders, outputFolder, transferMode)
     } else {
-      session = { ...session, name, sourceFolders, outputFolder: outputFolder || null, transferMode }
+      session = {
+        ...session,
+        name,
+        sourceFolders,
+        outputFolder: outputFolder || null,
+        transferMode
+      }
       await window.api.sessions.update(session)
     }
     setActiveSession(session)
@@ -113,7 +117,10 @@ export function SetupPage(): React.JSX.Element {
 
   return (
     <div className="flex h-screen flex-col">
-      <div className="h-12 w-full shrink-0" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
+      <div
+        className="h-12 w-full shrink-0"
+        style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+      />
 
       <div className="flex flex-1 flex-col overflow-hidden px-8 pb-8">
         {/* Header */}
@@ -123,7 +130,9 @@ export function SetupPage(): React.JSX.Element {
           </Button>
           <div>
             <h1 className="text-xl font-bold">Session Setup</h1>
-            <p className="text-sm text-muted-foreground">Set up your photo library and folders to sort</p>
+            <p className="text-sm text-muted-foreground">
+              Set up your photo library and folders to sort
+            </p>
           </div>
         </div>
 
@@ -148,7 +157,8 @@ export function SetupPage(): React.JSX.Element {
               <Label>Photo library</Label>
               <p className="text-xs text-muted-foreground">
                 Your organized archive, structured by year (e.g.{' '}
-                <code className="text-xs">YYYY/</code>). Files already sorted here appear as processed.
+                <code className="text-xs">YYYY/</code>). Files already sorted here appear as
+                processed.
               </p>
             </div>
 
@@ -203,12 +213,13 @@ export function SetupPage(): React.JSX.Element {
               <div>
                 <Label>Folders to sort</Label>
                 <p className="text-xs text-muted-foreground">
-                  Unsorted media to organize into your library. Optional — skip this to browse your library only.
+                  Unsorted media to organize into your library. Optional — skip this to browse your
+                  library only.
                 </p>
               </div>
               <Button variant="outline" size="sm" onClick={pickSourceFolder}>
                 <Plus className="mr-2 h-3 w-3" />
-                Add folder
+                Add folder to sort
               </Button>
             </div>
 
@@ -275,7 +286,9 @@ export function SetupPage(): React.JSX.Element {
                 <div className="flex items-center gap-2">
                   <Copy className="h-4 w-4" />
                   <span className="font-medium text-sm">Copy</span>
-                  <Badge variant="secondary" className="text-xs">Recommended</Badge>
+                  <Badge variant="secondary" className="text-xs">
+                    Recommended
+                  </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   Originals stay untouched. Safe if you have enough disk space.
@@ -312,7 +325,8 @@ export function SetupPage(): React.JSX.Element {
               <div className="flex items-start gap-2 max-w-md rounded-md border border-yellow-400/50 bg-yellow-50 px-3 py-2.5">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-600" />
                 <p className="text-xs text-yellow-700">
-                  <strong>Move mode is active.</strong> Original files will be permanently deleted after transfer. This cannot be undone. Make sure you have a backup.
+                  <strong>Move mode is active.</strong> Original files will be permanently deleted
+                  after transfer. This cannot be undone. Make sure you have a backup.
                 </p>
               </div>
             )}
@@ -325,8 +339,8 @@ export function SetupPage(): React.JSX.Element {
             {sourceFolders.length === 0
               ? 'Library-only mode — browse and review your organized media'
               : transferMode === 'copy'
-              ? 'Files will be copied — originals are never modified'
-              : 'Files will be moved — originals will be deleted after transfer'}
+                ? 'Files will be copied — originals are never modified'
+                : 'Files will be moved — originals will be deleted after transfer'}
           </p>
           <Button onClick={startScan} disabled={!canStart}>
             <ScanSearch className="mr-2 h-4 w-4" />
@@ -345,10 +359,12 @@ export function SetupPage(): React.JSX.Element {
             </AlertDialogTitle>
             <AlertDialogDescription className="space-y-2">
               <span className="block">
-                In Move mode, original files are <strong>permanently deleted</strong> after being transferred to the destination. This cannot be undone.
+                In Move mode, original files are <strong>permanently deleted</strong> after being
+                transferred to the destination. This cannot be undone.
               </span>
               <span className="block">
-                Only use this if you are running low on disk space and have already backed up your files elsewhere.
+                Only use this if you are running low on disk space and have already backed up your
+                files elsewhere.
               </span>
             </AlertDialogDescription>
           </AlertDialogHeader>

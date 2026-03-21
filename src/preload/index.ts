@@ -37,6 +37,8 @@ const api = {
     trashFile: (path: string): Promise<void> => ipcRenderer.invoke('dialog:trashFile', path),
     renameFile: (oldPath: string, newName: string): Promise<string> =>
       ipcRenderer.invoke('dialog:renameFile', oldPath, newName),
+    resolveDestPaths: (outputFolder: string, fileNames: string[]): Promise<Record<string, string>> =>
+      ipcRenderer.invoke('dialog:resolveDestPaths', outputFolder, fileNames),
     readImageAsDataUrl: (path: string): Promise<string | null> =>
       ipcRenderer.invoke('dialog:readImageAsDataUrl', path),
     pathToFileUrl: (path: string): Promise<string> => ipcRenderer.invoke('dialog:pathToFileUrl', path),

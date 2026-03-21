@@ -126,7 +126,8 @@ export function DateFixPage(): React.JSX.Element {
 
     for (const file of toFix) {
       const iso = new Date(targets[file.id]).toISOString()
-      updateFile(file.id, { overrideDate: iso })
+      const year = new Date(iso).getFullYear()
+      updateFile(file.id, { overrideDate: iso, resolvedDate: iso, resolvedYear: year })
     }
 
     updateActiveSession({ files: useFilesStore.getState().files })

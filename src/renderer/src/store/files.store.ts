@@ -168,7 +168,7 @@ export const useFilesStore = create<FilesState>((set, get) => ({
         if (filter.year === 'no-date' && f.resolvedYear !== null) return false
         if (typeof filter.year === 'number' && f.resolvedYear !== filter.year) return false
       }
-      if (filter.dateStatus && f.dateStatus !== filter.dateStatus) return false
+      // dateStatus filter is applied in the component using getDateStatus() for effective status
       if (filter.fileType) {
         const isImage = f.mimeType.startsWith('image/')
         if (filter.fileType === 'image' && !isImage) return false

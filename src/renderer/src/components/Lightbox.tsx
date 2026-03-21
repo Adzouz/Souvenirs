@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { X, ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle, AlertCircle, ExternalLink } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle, AlertCircle, ExternalLink, FolderOpen, FolderOutput } from 'lucide-react'
 import { cn, formatBytes, formatDate } from '@/lib/utils'
 import type { MediaFile } from '../../../shared/types'
 
@@ -14,6 +14,8 @@ interface LightboxProps {
   file: MediaFile
   currentIndex: number
   total: number
+  sourceFolders: string[]
+  outputFolder: string | null
   onClose: () => void
   onPrev: (() => void) | null
   onNext: (() => void) | null
@@ -23,6 +25,8 @@ export function Lightbox({
   file,
   currentIndex,
   total,
+  sourceFolders,
+  outputFolder,
   onClose,
   onPrev,
   onNext
@@ -30,6 +34,32 @@ export function Lightbox({
   const isVideo = file.mimeType.startsWith('video/')
   const statusCfg = DATE_STATUS_CONFIG[file.dateStatus]
   const StatusIcon = statusCfg.icon
+
+  // Relative source path (same logic as FileRow in Explorer)
+  const dir = file.path.substring(0, file.path.lastIndexOf('/'))
+  const matchedSourceFolder = sourceFolders
+    .map((s) => s.replace(/\/$/, ''))
+    .find((s) => file.path.startsWith(s + '/') || file.path === s)
+  const srcRootName = matchedSourceFolder
+    ? matchedSourceFolder.substring(matchedSourceFolder.lastIndexOf('/') + 1)
+    : ''
+  const srcRelSuffix = matchedSourceFolder ? dir.slice(matchedSourceFolder.length).replace(/^\//, '') : ''
+  const relativeSourcePath = srcRootName
+    ? srcRelSuffix ? `${srcRootName}/${srcRelSuffix}` : srcRootName
+    : dir.split('/').filter(Boolean).slice(-2).join('/') || dir
+
+  // Destination display (same logic as getDestDisplay in Explorer)
+  const destDisplay = outputFolder
+    ? (() => {
+        const rootName = outputFolder.substring(outputFolder.lastIndexOf('/') + 1)
+        const yearFolder = file.destPath
+          ? (file.destPath.split('/').slice(-2, -1)[0] ?? '')
+          : (file.resolvedYear?.toString() ?? 'NoDate')
+        return rootName === yearFolder ? yearFolder : `${rootName}/${yearFolder}`
+      })()
+    : null
+
+  const isMoved = file.status === 'moved'
   const [mediaSrc, setMediaSrc] = useState<string | null>(null)
   const [triedDataUrlFallback, setTriedDataUrlFallback] = useState(false)
   const [mediaReady, setMediaReady] = useState(false)
@@ -274,8 +304,28 @@ export function Lightbox({
           </span>
         )}
         <span className="shrink-0">{formatBytes(file.size)}</span>
-        <span className="ml-auto min-w-0 truncate font-mono text-white/25 text-right">
-          {file.path}
+        <span className="ml-auto flex items-center gap-3 min-w-0 font-mono text-xs">
+          {isMoved ? (
+            destDisplay && (
+              <span className="flex items-center gap-1 truncate text-green-400/70">
+                <FolderOutput className="h-3 w-3 shrink-0" />
+                {destDisplay}
+              </span>
+            )
+          ) : (
+            <>
+              <span className="flex items-center gap-1 truncate text-white/30">
+                <FolderOpen className="h-3 w-3 shrink-0" />
+                {relativeSourcePath}
+              </span>
+              {file.processed && destDisplay && (
+                <span className="flex items-center gap-1 truncate text-green-400/70">
+                  <FolderOutput className="h-3 w-3 shrink-0" />
+                  {destDisplay}
+                </span>
+              )}
+            </>
+          )}
         </span>
       </div>
     </div>

@@ -56,9 +56,19 @@ import { Lightbox } from '@/components/Lightbox'
 
 const DATE_STATUS_CONFIG = {
   ok: { label: 'OK', color: 'text-green-600', bg: 'bg-green-50', icon: CheckCircle2 },
-  mismatch: { label: 'Mismatch', color: 'text-yellow-600', bg: 'bg-yellow-50', icon: AlertTriangle },
+  mismatch: {
+    label: 'Mismatch',
+    color: 'text-yellow-600',
+    bg: 'bg-yellow-50',
+    icon: AlertTriangle
+  },
   missing: { label: 'No date', color: 'text-red-600', bg: 'bg-red-50', icon: AlertCircle },
-  configured: { label: 'Configured', color: 'text-blue-600', bg: 'bg-blue-50', icon: CalendarClock },
+  configured: {
+    label: 'Configured',
+    color: 'text-blue-600',
+    bg: 'bg-blue-50',
+    icon: CalendarClock
+  },
   fixed: { label: 'Fixed', color: 'text-green-600', bg: 'bg-green-50', icon: CalendarClock }
 }
 
@@ -66,6 +76,14 @@ function getDateStatus(file: MediaFile): keyof typeof DATE_STATUS_CONFIG {
   if (file.dateFixed) return 'fixed'
   if (file.overrideDate && !file.processed) return 'configured'
   return file.dateStatus
+}
+
+function getDestDisplay(file: MediaFile, outputFolder: string): string {
+  const rootName = outputFolder.substring(outputFolder.lastIndexOf('/') + 1)
+  const yearFolder = file.destPath
+    ? (file.destPath.split('/').slice(-2, -1)[0] ?? '')
+    : (file.resolvedYear?.toString() ?? 'NoDate')
+  return rootName === yearFolder ? yearFolder : `${rootName}/${yearFolder}`
 }
 
 function ThumbnailCell({
@@ -142,7 +160,7 @@ const FileRow = React.memo(function FileRow({
     ? relativeSuffix
       ? `${rootName}/${relativeSuffix}`
       : rootName
-    : dir
+    : dir.split('/').filter(Boolean).slice(-2).join('/') || dir
   const shortPath = relativeDir.length > 60 ? '…' + relativeDir.slice(-57) : relativeDir
 
   return (
@@ -187,12 +205,13 @@ const FileRow = React.memo(function FileRow({
               )}
             </div>
             <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground font-mono">
-              {(file.status === 'moved' || (file.processed && activeSession?.transferMode === 'move')) ? (
+              {file.status === 'moved' ||
+              (file.processed && activeSession?.transferMode === 'move') ? (
                 activeSession?.outputFolder ? (
                   <>
                     <FolderOutput className="h-3 w-3 shrink-0 text-green-500" />
                     <span className="truncate text-green-600">
-                      {`${activeSession.outputFolder.substring(activeSession.outputFolder.lastIndexOf('/') + 1)}/${file.resolvedYear ?? 'NoDate'}`}
+                      {getDestDisplay(file, activeSession.outputFolder)}
                     </span>
                   </>
                 ) : null
@@ -204,7 +223,7 @@ const FileRow = React.memo(function FileRow({
                     <>
                       <FolderOutput className="h-3 w-3 shrink-0 ml-1 text-green-500" />
                       <span className="truncate text-green-600">
-                        {`${activeSession.outputFolder.substring(activeSession.outputFolder.lastIndexOf('/') + 1)}/${file.resolvedYear ?? 'NoDate'}`}
+                        {getDestDisplay(file, activeSession.outputFolder)}
                       </span>
                     </>
                   )}
@@ -444,10 +463,11 @@ const GridCard = React.memo(function GridCard({
           <div className="p-2">
             <p className="truncate text-xs font-medium">{file.name}</p>
             <div className="flex items-center gap-1 mt-0.5">
-              {file.processed
-                ? <FolderOutput className="h-3 w-3 shrink-0 text-green-500" />
-                : <FolderOpen className="h-3 w-3 shrink-0 opacity-40" />
-              }
+              {file.processed ? (
+                <FolderOutput className="h-3 w-3 shrink-0 text-green-500" />
+              ) : (
+                <FolderOpen className="h-3 w-3 shrink-0 opacity-40" />
+              )}
               {file.duplicateType && (
                 <Badge
                   variant="outline"
@@ -565,7 +585,10 @@ export function ExplorerPage(): React.JSX.Element {
     window.api.thumbnails
       .generateBatch(needsThumbnail.map((f) => ({ filePath: f.path, fileId: f.id })))
       .then(() => {
-        if (flushTimer) { clearTimeout(flushTimer); flush() }
+        if (flushTimer) {
+          clearTimeout(flushTimer)
+          flush()
+        }
         setPendingThumbs(new Set())
       })
 
@@ -590,7 +613,9 @@ export function ExplorerPage(): React.JSX.Element {
   // All derived values memoized — only recompute when their actual inputs change,
   // NOT on every thumbnail update (thumbnails are now stored separately).
   const filtered = React.useMemo(() => {
-    const base = getFiltered()
+    const base = getFiltered().filter((f) =>
+      filter.dateStatus ? getDateStatus(f) === filter.dateStatus : true
+    )
     return [...base].sort((a, b) => {
       let cmp = 0
       if (sortCol === 'name') cmp = a.name.localeCompare(b.name)
@@ -609,11 +634,14 @@ export function ExplorerPage(): React.JSX.Element {
   const duplicateCount = duplicateGroups.size
   const errorCount = activeSession?.errorLog?.filter((e) => !e.retried).length ?? 0
   const thumbsRemaining = pendingThumbs.size
-  const { unprocessedCount, noDateCount, mismatchCount } = React.useMemo(() => ({
-    unprocessedCount: files.filter((f) => !f.processed).length,
-    noDateCount: files.filter((f) => !f.processed && f.dateStatus === 'missing').length,
-    mismatchCount: files.filter((f) => !f.processed && f.dateStatus === 'mismatch').length,
-  }), [files])
+  const { unprocessedCount, noDateCount, mismatchCount } = React.useMemo(
+    () => ({
+      unprocessedCount: files.filter((f) => !f.processed).length,
+      noDateCount: files.filter((f) => getDateStatus(f) === 'missing').length,
+      mismatchCount: files.filter((f) => getDateStatus(f) === 'mismatch').length
+    }),
+    [files]
+  )
 
   // Select mode: derived from whether anything is selected
   const selectMode = selectedIds.size > 0
@@ -627,7 +655,8 @@ export function ExplorerPage(): React.JSX.Element {
     Math.max(2, Math.floor((window.innerWidth - 240) / 152))
   )
   React.useEffect(() => {
-    const handler = (): void => setGridCols(Math.max(2, Math.floor((window.innerWidth - 240) / 152)))
+    const handler = (): void =>
+      setGridCols(Math.max(2, Math.floor((window.innerWidth - 240) / 152)))
     window.addEventListener('resize', handler)
     return () => window.removeEventListener('resize', handler)
   }, [])
@@ -641,7 +670,8 @@ export function ExplorerPage(): React.JSX.Element {
     const groups = new Map<string, { label: string; files: MediaFile[] }>()
     for (const file of filtered) {
       const key = file.resolvedYear?.toString() ?? 'no-date'
-      if (!groups.has(key)) groups.set(key, { label: file.resolvedYear?.toString() ?? 'No date', files: [] })
+      if (!groups.has(key))
+        groups.set(key, { label: file.resolvedYear?.toString() ?? 'No date', files: [] })
       groups.get(key)!.files.push(file)
     }
     const sorted = Array.from(groups.entries()).sort(([a], [b]) => {
@@ -685,7 +715,7 @@ export function ExplorerPage(): React.JSX.Element {
         >
           {thumbsRemaining > 0 && (
             <span className="text-xs text-muted-foreground tabular-nums mr-1">
-              {thumbsRemaining} thumbnails…
+              {thumbsRemaining} thumbnails remaining…
             </span>
           )}
           {errorCount > 0 && (
@@ -699,14 +729,24 @@ export function ExplorerPage(): React.JSX.Element {
               <span className="text-xs">{errorCount} errors</span>
             </Button>
           )}
-          <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={addFolderToSort}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1.5 text-xs"
+            onClick={addFolderToSort}
+          >
             <FolderPlus className="h-3.5 w-3.5" />
-            Add folder
+            Add folder to sort
           </Button>
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPage('scan')}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => setPage('scan')}
+                >
                   <ScanSearch className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
@@ -975,15 +1015,35 @@ export function ExplorerPage(): React.JSX.Element {
                       <div className="w-10 shrink-0" />
                       {(['name', 'processed', 'size', 'date'] as const).map((col) => {
                         if (col === 'processed') {
-                          return <div key={col} className="w-28 shrink-0">Processed</div>
+                          return (
+                            <div key={col} className="w-28 shrink-0">
+                              Processed
+                            </div>
+                          )
                         }
                         const active = sortCol === col
-                        const Icon = active ? (sortDir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
-                        const label = col === 'name' ? 'Name / Path' : col === 'size' ? 'Size' : 'Date'
-                        const cls = col === 'name' ? 'min-w-0 flex-1' : col === 'size' ? 'w-16 shrink-0 justify-end' : 'w-28 shrink-0 justify-end'
+                        const Icon = active
+                          ? sortDir === 'asc'
+                            ? ArrowUp
+                            : ArrowDown
+                          : ArrowUpDown
+                        const label =
+                          col === 'name' ? 'Name / Path' : col === 'size' ? 'Size' : 'Date'
+                        const cls =
+                          col === 'name'
+                            ? 'min-w-0 flex-1'
+                            : col === 'size'
+                              ? 'w-16 shrink-0 justify-end'
+                              : 'w-28 shrink-0 justify-end'
                         return (
-                          <button key={col} type="button"
-                            className={cn('flex min-w-0 items-center gap-1 cursor-pointer hover:text-foreground transition-colors select-none', cls, active && 'text-foreground')}
+                          <button
+                            key={col}
+                            type="button"
+                            className={cn(
+                              'flex min-w-0 items-center gap-1 cursor-pointer hover:text-foreground transition-colors select-none',
+                              cls,
+                              active && 'text-foreground'
+                            )}
                             onClick={() => handleSort(col)}
                           >
                             {col !== 'name' && <Icon className="h-3 w-3 shrink-0" />}
@@ -1002,7 +1062,14 @@ export function ExplorerPage(): React.JSX.Element {
                     No files match the current filters
                   </div>
                 ) : (
-                  <VList className="flex-1 overflow-x-auto" style={{ paddingLeft: '0.5rem', paddingRight: '0.5rem', paddingBottom: '0.5rem' }}>
+                  <VList
+                    className="flex-1 overflow-x-auto"
+                    style={{
+                      paddingLeft: '0.5rem',
+                      paddingRight: '0.5rem',
+                      paddingBottom: '0.5rem'
+                    }}
+                  >
                     {filtered.map((file) => (
                       <div key={file.id} className="min-w-[52rem]">
                         <FileRow
@@ -1027,7 +1094,10 @@ export function ExplorerPage(): React.JSX.Element {
                   item.type === 'header' ? (
                     <div
                       key={`header-${item.label}`}
-                      className={cn('flex items-center justify-between px-4 pb-2', item.isFirst ? 'pt-4' : 'pt-6')}
+                      className={cn(
+                        'flex items-center justify-between px-4 pb-2',
+                        item.isFirst ? 'pt-4' : 'pt-6'
+                      )}
                     >
                       <h3 className="text-sm font-semibold">{item.label}</h3>
                       <span className="text-xs text-muted-foreground">
@@ -1036,7 +1106,10 @@ export function ExplorerPage(): React.JSX.Element {
                     </div>
                   ) : (
                     <div key={item.rowKey} className="px-4 pb-3">
-                      <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}>
+                      <div
+                        className="grid gap-3"
+                        style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}
+                      >
                         {item.files.map((file) => (
                           <GridCard
                             key={file.id}
@@ -1093,7 +1166,8 @@ export function ExplorerPage(): React.JSX.Element {
                 <span className="text-sm text-muted-foreground">{selectedIds.size} selected</span>
                 <Button disabled={!hasOutput} onClick={() => setPage('preview')}>
                   <Copy className="mr-2 h-4 w-4" />
-                  {activeSession?.transferMode === 'move' ? 'Move' : 'Copy'} {selectedIds.size} file{selectedIds.size !== 1 ? 's' : ''}
+                  {activeSession?.transferMode === 'move' ? 'Move' : 'Copy'} {selectedIds.size} file
+                  {selectedIds.size !== 1 ? 's' : ''}
                 </Button>
               </div>
             </div>
@@ -1106,8 +1180,12 @@ export function ExplorerPage(): React.JSX.Element {
           file={lightboxFile}
           currentIndex={lightboxIndex}
           total={filtered.length}
+          sourceFolders={activeSession?.sourceFolders ?? []}
+          outputFolder={activeSession?.outputFolder ?? null}
           onClose={() => setLightboxFileId(null)}
-          onPrev={lightboxIndex > 0 ? () => setLightboxFileId(filtered[lightboxIndex - 1].id) : null}
+          onPrev={
+            lightboxIndex > 0 ? () => setLightboxFileId(filtered[lightboxIndex - 1].id) : null
+          }
           onNext={
             lightboxIndex < filtered.length - 1
               ? () => setLightboxFileId(filtered[lightboxIndex + 1].id)

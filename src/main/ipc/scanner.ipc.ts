@@ -216,6 +216,7 @@ export function registerScannerHandlers(): void {
             duplicateType: null,
             overrideDate: null,
             dateFixed: false,
+            destPath: null,
             errorMessage: null
           }
 
@@ -306,12 +307,15 @@ export function registerScannerHandlers(): void {
           } satisfies ScanProgress)
         }
 
-        const destSkipHashes = new Map<string, MediaFile>() // skip-hash → dest file
+        // Map hash → all dest files with that hash (same content copied multiple times)
+        const destSkipHashes = new Map<string, MediaFile[]>()
         await Promise.all(
           destFiles.map(async (f) => {
             try {
               const h = await contentHashSkipHeader(f.path, f.size)
-              destSkipHashes.set(h, f)
+              const bucket = destSkipHashes.get(h) ?? []
+              bucket.push(f)
+              destSkipHashes.set(h, bucket)
             } catch { /* ignore */ }
             sendMatchProgress(f.name)
           })
@@ -322,19 +326,51 @@ export function registerScannerHandlers(): void {
           sourceFiles.map(async (f) => {
             try {
               const h = await contentHashSkipHeader(f.path, f.size)
-              const destFile = destSkipHashes.get(h)
-              if (destFile) {
+              const bucket = destSkipHashes.get(h)
+              if (bucket && bucket.length > 0) {
+                const destFile = bucket[0]
                 f.processed = true
-                matchedDestIds.add(destFile.id)
+                f.destPath = destFile.path
+                // Mark ALL dest copies as matched so none appear as duplicates
+                bucket.forEach((d) => matchedDestIds.add(d.id))
                 // Destination has ok date but source didn't → date was fixed during copy
                 if (f.dateStatus !== 'ok' && destFile.dateStatus === 'ok') {
                   f.dateFixed = true
+                  // Show the corrected date from the destination, not the source's bad date
+                  f.exifDate = destFile.exifDate
+                  f.resolvedDate = destFile.resolvedDate
+                  f.resolvedYear = destFile.resolvedYear
+                  f.dateStatus = 'ok'
                 }
               }
             } catch { /* ignore */ }
             sendMatchProgress(f.name)
           })
         )
+
+        // Fallback: match unmatched source files by filename.
+        // exiftool date-fixing can shift file content enough to break skip-header hashes,
+        // so filename is used as a secondary signal for already-processed files.
+        const destByName = new Map<string, MediaFile>()
+        for (const f of destFiles) {
+          if (!destByName.has(f.name)) destByName.set(f.name, f)
+        }
+        for (const f of sourceFiles) {
+          if (f.processed) continue
+          const destFile = destByName.get(f.name)
+          if (destFile && !matchedDestIds.has(destFile.id)) {
+            f.processed = true
+            f.destPath = destFile.path
+            matchedDestIds.add(destFile.id)
+            if (f.dateStatus !== 'ok' && destFile.dateStatus === 'ok') {
+              f.dateFixed = true
+              f.exifDate = destFile.exifDate
+              f.resolvedDate = destFile.resolvedDate
+              f.resolvedYear = destFile.resolvedYear
+              f.dateStatus = 'ok'
+            }
+          }
+        }
 
         // Only keep destination files that have no matching source file
         const destinationOnlyFiles = destFiles.filter((f) => !matchedDestIds.has(f.id))
@@ -421,6 +457,7 @@ export function registerScannerHandlers(): void {
             duplicateType: null,
             overrideDate: null,
             dateFixed: false,
+            destPath: null,
             errorMessage: null
           })
           found++

@@ -25,6 +25,7 @@ interface Api {
     openFile: (path: string) => Promise<void>
     trashFile: (path: string) => Promise<void>
     renameFile: (oldPath: string, newName: string) => Promise<string>
+    resolveDestPaths: (outputFolder: string, fileNames: string[]) => Promise<Record<string, string>>
     readImageAsDataUrl: (path: string) => Promise<string | null>
     pathToFileUrl: (path: string) => Promise<string>
     mediaPreviewUrl: (path: string) => Promise<string>

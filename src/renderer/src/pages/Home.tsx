@@ -27,7 +27,8 @@ import {
   AlertTriangle,
   Clock,
   ChevronRight,
-  Image
+  Image,
+  Loader2
 } from 'lucide-react'
 import type { Session } from '../../../shared/types'
 
@@ -36,6 +37,7 @@ export function HomePage(): React.JSX.Element {
   const { setPage } = useUiStore()
   const { setFiles } = useFilesStore()
   const [missingFolders, setMissingFolders] = React.useState<Set<string>>(new Set())
+  const [openingSessionId, setOpeningSessionId] = React.useState<string | null>(null)
 
   useEffect(() => {
     loadSessions()
@@ -57,8 +59,25 @@ export function HomePage(): React.JSX.Element {
   }, [sessions])
 
   async function openSession(session: Session): Promise<void> {
+    setOpeningSessionId(session.id)
     setActiveSession(session)
     setFiles(session.files)
+
+    // Resolve destPaths for processed files that predate this field
+    if (session.outputFolder) {
+      const missing = session.files.filter((f) => f.processed && !f.destPath)
+      if (missing.length > 0) {
+        const resolved = await window.api.dialog.resolveDestPaths(
+          session.outputFolder,
+          missing.map((f) => f.name)
+        )
+        const { updateFile } = useFilesStore.getState()
+        for (const f of missing) {
+          if (resolved[f.name]) updateFile(f.id, { destPath: resolved[f.name] })
+        }
+      }
+    }
+
     setPage(session.files.length > 0 ? 'explorer' : 'setup')
   }
 
@@ -71,6 +90,15 @@ export function HomePage(): React.JSX.Element {
     setActiveSession(null)
     setFiles([])
     setPage('setup')
+  }
+
+  if (openingSessionId) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-4">
+        <FolderOpen className="h-10 w-10 text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">Opening session…</p>
+      </div>
+    )
   }
 
   return (

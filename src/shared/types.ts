@@ -20,6 +20,7 @@ export interface MediaFile {
   dateFixed: boolean // destination copy had its date corrected — detected on rescan
   status: FileStatus
   processed: boolean // already exists in destination YYYY/ folder
+  destPath: string | null // absolute path where the file was copied/moved to
   duplicateGroupId: string | null // set when multiple files share the same name+year or content
   duplicateType: 'name' | 'content' | null // how the duplicate was detected
   errorMessage: string | null

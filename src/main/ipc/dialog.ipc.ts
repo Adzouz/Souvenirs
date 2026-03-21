@@ -1,5 +1,6 @@
 import { ipcMain, dialog, shell } from 'electron'
 import { readFile, unlink, access, rename } from 'fs/promises'
+import { readdirSync } from 'fs'
 import { extname, dirname, join } from 'path'
 import { pathToFileURL } from 'url'
 import { execFile } from 'child_process'
@@ -32,6 +33,21 @@ export function registerDialogHandlers(): void {
 
   ipcMain.handle('dialog:trashFile', async (_, path: string): Promise<void> => {
     await shell.trashItem(path)
+  })
+
+  ipcMain.handle('dialog:resolveDestPaths', (_, outputFolder: string, fileNames: string[]): Record<string, string> => {
+    const result: Record<string, string> = {}
+    const nameSet = new Set(fileNames)
+    try {
+      const dirs = readdirSync(outputFolder, { withFileTypes: true }).filter((d) => d.isDirectory())
+      for (const dir of dirs) {
+        const yearPath = join(outputFolder, dir.name)
+        for (const f of readdirSync(yearPath)) {
+          if (nameSet.has(f) && !result[f]) result[f] = join(yearPath, f)
+        }
+      }
+    } catch { /* ignore */ }
+    return result
   })
 
   ipcMain.handle('dialog:renameFile', async (_, oldPath: string, newName: string): Promise<string> => {
